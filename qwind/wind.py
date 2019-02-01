@@ -1,14 +1,12 @@
 import numpy as np
-import constants as const
-import radiation
+import qwind.constants as const
+from qwind import radiation
 from scipy import interpolate
-from joblib import Parallel, delayed
 from multiprocessing import Pool
-import utils
+from qwind import utils
 import os
-import numba as nb
 from numba import jitclass, jit
-import aux_numba
+from qwind import aux_numba
 
 multiprocessing_pool = Pool(1) # for parallelisation
 
@@ -29,7 +27,7 @@ class wind:
     """
     A class used to represent the global properties of the wind, i.e, the accretion disc and black hole properties as well as attributes shared among streamlines.
     """
-    def __init__(self, M = 1e8, mdot = 0.5, spin=0.,eta=0.06, fx = 0.10, r_in = 40, r_out = 1600, r_min = 6., r_max=1400, T=2e6, mu = 1, modes =[], rho_shielding = 2e8, intsteps=1., nr=10,save_dir="Results", radiation_mode = "Windy", n_cpus = 1):
+    def __init__(self, M = 1e8, mdot = 0.5, spin=0.,eta=0.06, fx = 0.10, r_in = 40, r_out = 1600, r_min = 6., r_max=1400, T=2e6, mu = 1, modes =[], rho_shielding = 2e8, intsteps=1., nr=10,save_dir="Results", radiation_mode = "Qwind", n_cpus = 1):
         """
         Parameters
         ----------
@@ -127,9 +125,6 @@ class wind:
         self.lines = [] # list of streamline objects
         self.lines_hist = [] # save all iterations info
 
-        #line_range = np.linspace(self.r_init, 1000, nr)
-
-        self.fm_mean_lines = np.zeros(nr)
         
     def v_kepler(self, r ):
         """
@@ -183,8 +178,8 @@ class wind:
             T=2e6,
             v_r_0=0.,
             v_z_0=5e7,
-            dt=4.096 / 10,
-            fm_mean = 0):
+            dt=4.096 / 10
+            ):
         """
         Initialises a streamline object.
         
@@ -205,7 +200,7 @@ class wind:
         dt : float
             Timestep in units of Rg/c.
         """
-        from streamline import streamline
+        from qwind.streamline import streamline
         return streamline(
             self.radiation,
             parent = self,
@@ -215,8 +210,8 @@ class wind:
             T = T,
             v_r_0 = v_r_0,
             v_z_0 = v_z_0,
-            dt = dt,
-            fm_mean = fm_mean)
+            dt = dt
+            )
 
     
     def StartLines(self, v_z_0 = 5e7, niter=5000):        
@@ -237,7 +232,7 @@ class wind:
         self.lines = []
 
         for i, r in enumerate(self.lines_r_range):
-            self.lines.append(self.line(r_0=r,v_z_0=v_z_0, fm_mean = self.fm_mean_lines[i]))
+            self.lines.append(self.line(r_0=r,v_z_0=v_z_0))
         i = 0
         if(self.n_cpus==1):
             for line in self.lines:

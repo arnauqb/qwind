@@ -1,9 +1,8 @@
 import numpy as np
 import scipy.integrate
-import utils
-import constants as const
-from wind import wind 
-from aux_numba import integrate
+from qwind import utils
+from qwind import constants as const
+from qwind.wind import wind 
 
 # check backend to import appropiate progress bar #
 def tqdm_dump(array):
@@ -12,7 +11,8 @@ backend = utils.type_of_script()
 if(backend == 'jupyter'):
     from tqdm import tqdm_notebook as tqdm
 else:
-    tqdm = tqdm_dump
+    from tqdm import tqdm
+    #tqdm = tqdm_dump
 
 class streamline():
     """
@@ -29,8 +29,7 @@ class streamline():
             T=2e6,
             v_z_0=5e7,
             v_r_0=0.,
-            dt=4.096 / 10,
-            fm_mean = 0
+            dt=4.096 / 10            
             ):
         """
         Parameters
@@ -56,8 +55,6 @@ class streamline():
     
         self.wind = parent
         self.radiation = radiation_class
-
-        self.fm_mean = fm_mean
         
         # black hole and disc variables #
         self.a = [0, 0, 0]  # / u.s**2
@@ -99,12 +96,11 @@ class streamline():
         self.tau_dr_shielding = self.wind.tau_dr(self.wind.rho_shielding)
 
         self.tau_uv = self.radiation.optical_depth_uv(self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_0)
-        self.tau_sx = self.radiation.optical_depth_soft_xray(self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_0, self.wind.rho_shielding)
-        self.tau_hx = self.radiation.optical_depth_hard_xray(self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_0, self.wind.rho_shielding)
+        self.tau_x = self.radiation.optical_depth_x(self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_0, self.wind.rho_shielding)
 
         self.tau_eff = 0
-        self.fm = 1
-        self.xi = self.radiation.ionization_parameter(self.r, self.z, self.tau_sx, self.wind.rho_shielding)#self.wind.Xi(self.d, self.z / self.r) 
+        self.fm = 0
+        self.xi = self.radiation.ionization_parameter(self.r, self.z, self.tau_x, self.wind.rho_shielding)#self.wind.Xi(self.d, self.z / self.r) 
 
         # force related variables #
         self.Fgrav = []
@@ -133,9 +129,7 @@ class streamline():
         self.dv_dr_hist = [0]
         self.dr_e_hist = [self.dr_e]
         self.tau_uv_hist = [self.tau_uv]
-        self.tau_x_hist = [self.tau_sx]
-        self.tau_sx_hist = [self.tau_sx]
-        self.tau_hx_hist = [self.tau_hx]
+        self.tau_x_hist = [self.tau_x]
         self.tau_eff_hist = [0]
         self.taumax_hist = []
         self.fm_hist = [1]
@@ -181,7 +175,7 @@ class streamline():
         """
         # compute acceleration vector #
         fg = self.Force_gravity()
-        fr = self.radiation.force_radiation(self.r, self.z, self.fm, self.tau_uv, self.fm_mean)#self.Force_radiation()
+        fr = self.radiation.force_radiation(self.r, self.z, self.fm, self.tau_uv)
         self.Fgrav.append(fg)
         self.Frad.append(fr)
         self.a = fg
@@ -269,17 +263,14 @@ class streamline():
         self.dr_e_hist.append(self.tau_eff/self.tau_dr)
         self.tau_eff_hist.append(self.tau_eff)
         
-        self.xi = self.radiation.ionization_parameter(self.r,self.z, self.tau_sx, self.wind.rho_shielding)
+        self.xi = self.radiation.ionization_parameter(self.r,self.z, self.tau_x, self.wind.rho_shielding)
         self.xi_hist.append(self.xi)
 
         self.tau_uv = self.radiation.optical_depth_uv(self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_0)
         self.tau_uv_hist.append(self.tau_uv)
 
-        self.tau_sx = self.radiation.optical_depth_soft_xray(self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_0, self.wind.rho_shielding)
-        self.tau_hx = self.radiation.optical_depth_hard_xray(self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_0, self.wind.rho_shielding)
-        self.tau_sx_hist.append(self.tau_sx)
-        self.tau_x_hist.append(self.tau_sx)
-        self.tau_hx_hist.append(self.tau_hx)
+        self.tau_x = self.radiation.optical_depth_x(self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_0, self.wind.rho_shielding)
+        self.tau_x_hist.append(self.tau_x)
         
         self.fm = self.radiation.force_multiplier(self.tau_eff, self.xi)
         self.fm_hist.append(self.fm)
@@ -294,8 +285,6 @@ class streamline():
         self.UpdatePositions()
         # update radiation field #
         self.UpdateRadiation()
-
-    # @profile(immediate=True)
 
     def iterate(self, niter=5000):
         """

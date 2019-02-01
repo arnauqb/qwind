@@ -1,6 +1,6 @@
 import numpy as np
-import aux_numba 
-import constants as const
+from qwind import aux_numba
+import qwind.constants as const
 from scipy import optimize, integrate
 
 """
@@ -150,7 +150,7 @@ class Qwind():
                 ((tau_max) ** (1. - alpha))
         return k * t**(-alpha) * aux
 
-    def force_radiation(self, r, z, fm, tau_uv, fm_mean):
+    def force_radiation(self, r, z, fm, tau_uv):
         """
         Computes radiation force at point (r,z)
         """

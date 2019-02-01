@@ -3,7 +3,7 @@ Auxiliary file for Numba functions.
 """
 import numpy as np
 import scipy
-import constants as const
+from qwind import constants as const
 import inspect
 from numba import jitclass, jit, int32, float32, cfunc
 from numba.types import intc, CPointer, float64
@@ -98,7 +98,8 @@ def qwind_integration(r, z, tau_uv):
     return integral
 
 
-@jit(nopython=True)
+#@jit(nopython=True)
+@jit_integrand
 def _integrate_dblquad_kernel_r(r_d, phi_d, r, z, abs_uv):
     ff0 = (1. - np.sqrt(6. / r_d)) / r_d ** 3.
     delta = _Distance_gas_disc(r_d, phi_d, r, z)
@@ -109,7 +110,8 @@ def _integrate_dblquad_kernel_r(r_d, phi_d, r, z, abs_uv):
     return ff * cos_gamma 
 
 
-@jit(nopython=True)
+#@jit(nopython=True)
+@jit_integrand
 def _integrate_dblquad_kernel_z(r_d, phi_d, r, z, abs_uv):
     ff0 = (1. - np.sqrt(6. / r_d)) / r_d ** 3.
     delta = _Distance_gas_disc(r_d, phi_d, r, z)
