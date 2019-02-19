@@ -1,0 +1,13 @@
+README.md
+setup.py
+qwind/__init__.py
+qwind/aux_numba.py
+qwind/constants.py
+qwind/radiation.py
+qwind/streamline.py
+qwind/utils.py
+qwind/wind.py
+qwind.egg-info/PKG-INFO
+qwind.egg-info/SOURCES.txt
+qwind.egg-info/dependency_links.txt
+qwind.egg-info/top_level.txt
