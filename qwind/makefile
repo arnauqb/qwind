@@ -1,5 +1,5 @@
 make:
-	gcc -Wall -shared -fPIC -o c_functions.so c_functions.c -lm -lgsl -lgslcblas
+	gcc c_functions.c -Wall -shared -fPIC  -lm -lgsl -lgslcblas -o c_functions.so 
 
 
 #-shared -fPIC

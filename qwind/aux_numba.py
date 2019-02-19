@@ -98,7 +98,6 @@ def qwind_integration(r, z, tau_uv):
     return integral
 
 
-#@jit(nopython=True)
 @jit_integrand
 def _integrate_dblquad_kernel_r(r_d, phi_d, r, z, abs_uv):
     ff0 = (1. - np.sqrt(6. / r_d)) / r_d ** 3.
@@ -110,7 +109,6 @@ def _integrate_dblquad_kernel_r(r_d, phi_d, r, z, abs_uv):
     return ff * cos_gamma 
 
 
-#@jit(nopython=True)
 @jit_integrand
 def _integrate_dblquad_kernel_z(r_d, phi_d, r, z, abs_uv):
     ff0 = (1. - np.sqrt(6. / r_d)) / r_d ** 3.
