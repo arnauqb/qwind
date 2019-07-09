@@ -16,7 +16,7 @@ sigma_t = const.physical_constants['Thomson cross section'][0] * 1e4
 year = u.yr.cgs.scale
 
 # useful normalization factors #
-ionization_parameter_critical = 1e5 # / ( 4 * np.pi * Ryd * c)
+ionization_parameter_critical = 1e5 / 8.2125 # / ( 4 * np.pi * Ryd * c)
 emissivity_constant = 4 * np.pi * m_p * c**3 / sigma_t # GE in qwind
 
 def convert_units(value, current_unit, new_unit):

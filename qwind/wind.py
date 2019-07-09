@@ -5,10 +5,11 @@ from scipy import interpolate
 from multiprocessing import Pool
 from qwind import utils
 import os
+import shutil
+import pandas as pd
 from numba import jitclass, jit
 from qwind import aux_numba
 
-multiprocessing_pool = Pool(1) # for parallelisation
 
 # check backend to import appropiate progress bar #
 def tqdm_dump(array):
@@ -23,11 +24,11 @@ def evolve(line, niter):
     line.iterate(niter=niter)
     return line
 
-class wind:
+class Qwind:
     """
     A class used to represent the global properties of the wind, i.e, the accretion disc and black hole properties as well as attributes shared among streamlines.
     """
-    def __init__(self, M = 1e8, mdot = 0.5, spin=0.,eta=0.06, fx = 0.10, r_in = 40, r_out = 1600, r_min = 6., r_max=1400, T=2e6, mu = 1, modes =[], rho_shielding = 2e8, intsteps=1., nr=10,save_dir="Results", radiation_mode = "Qwind", n_cpus = 1):
+    def __init__(self, M = 2e8, mdot = 0.5, spin=0.,eta=0.0313, fx = 0.15, r_in = 200, r_out = 1600, r_min = 6., r_max=1400, T=2e6, mu = 1, modes =[], rho_shielding = 2e8, intsteps=1, nr=20, save_dir="Results", radiation_mode = "Qwind", n_cpus = 1):
         """
         Parameters
         ----------
@@ -65,7 +66,6 @@ class wind:
         """
 
         self.n_cpus = n_cpus
-        multiprocessing_pool = Pool(n_cpus)
         
         # array containing different modes for debugging #
         self.modes = modes
@@ -84,24 +84,12 @@ class wind:
         
         self.Rg = const.G * self.M / (const.c ** 2) # gravitational radius
         self.rho_shielding = rho_shielding
-        self.eddington_luminosity = self.EddingtonLuminosity() #Edd luminosity
         self.bol_luminosity = self.mdot * self.eddington_luminosity
-        self.xray_luminosity = self.mdot * self.eddington_luminosity* self.fx
-        
-        self.uv_fraction = 0.87589
-        self.luminosity_uv = self.uv_fraction * self.bol_luminosity
-        
-        self.soft_xray_fraction = 0.11456
-        self.luminosity_soft_xray = self.soft_xray_fraction * self.bol_luminosity
-        
-        self.hard_xray_fraction = 0.00924
-        self.luminosity_hard_xray = self.hard_xray_fraction * self.bol_luminosity
+        self.xray_luminosity = self.mdot * self.eddington_luminosity * self.fx
         
         self.tau_dr_0 = self.tau_dr(rho_shielding)
-        self.v_thermal = self.ThermalVelocity(T)
+        self.v_thermal = self.thermal_velocity(T)
        
-        
-
         # create directory if it doesnt exist. Warning, this overwrites previous outputs.
         self.save_dir = save_dir
         try:
@@ -110,8 +98,7 @@ class wind:
             pass
 
         #try:
-        radiation_attr = getattr(radiation, radiation_mode) 
-        self.radiation = radiation_attr(self)
+        self.radiation = radiation.Radiation(self)
         #except:
         #    print("Radiation mode not found")
         #    return None
@@ -125,13 +112,21 @@ class wind:
         self.lines = [] # list of streamline objects
         self.lines_hist = [] # save all iterations info
 
-        
+    def norm2d(self, vector):
+        return np.sqrt(vector[0] ** 2 + vector[-1] ** 2)
+    
+    def dist2d(self, x, y):
+        # 2d distance in cyl coordinates #
+        dr = y[0] - x[0]
+        dz = y[2] - x[2]
+        return np.sqrt(dr**2 + dz**2)   
+    
     def v_kepler(self, r ):
         """
         Keplerian tangential velocity in units of c.
         """
         
-        return np.sqrt(1. / (r) )
+        return np.sqrt(1. / r)
 
     def v_esc(self,d):
         """
@@ -145,13 +140,14 @@ class wind:
         
         return np.sqrt(2. / d)
 
-    def EddingtonLuminosity(self):
+    @property
+    def eddington_luminosity(self):
         """ 
         Returns the Eddington Luminosity. 
         """
         return const.emissivity_constant * self.Rg
 
-    def ThermalVelocity(self, T):
+    def thermal_velocity(self, T):
         """
         Thermal velocity for gas with molecular weight mu and temperature T
         """
@@ -174,11 +170,12 @@ class wind:
     
     def line(self,
             r_0=375.,
-            z_0=1., rho_0=2e8,
+            z_0=1., 
+            rho_0=2e8,
             T=2e6,
             v_r_0=0.,
             v_z_0=5e7,
-            dt=4.096 / 10
+            dt=4.096 / 10.
             ):
         """
         Initialises a streamline object.
@@ -214,7 +211,7 @@ class wind:
             )
 
     
-    def StartLines(self, v_z_0 = 5e7, niter=5000):        
+    def start_lines(self, v_z_0 = 5e7, niter=5000):        
         """
         Starts and evolves a set of equally spaced streamlines.
         
@@ -240,9 +237,71 @@ class wind:
                print("Line %d of %d"%(i, len(self.lines)))
                line.iterate(niter=niter)
             return self.lines
-        
+        print("multiple cpus")
         niter_array = niter * np.ones(len(self.lines))
         niter_array = niter_array.astype('int')
-        self.lines = multiprocessing_pool.starmap(evolve, zip(self.lines, niter_array))
-        self.lines_hist.append(self.lines)
+
+        with Pool(self.n_cpus) as multiprocessing_pool:
+            self.lines = multiprocessing_pool.starmap(evolve, zip(self.lines, niter_array))
         return self.lines
+
+    def save_results(self, folder_name = "Results"):
+        """
+        Saves results to filename.
+        """
+        try:
+            os.mkdir(folder_name)
+        except:
+            answer = input("warning, folder exists, delete? (y/N)")
+            if (answer == 'y'):
+                shutil.rmtree(folder_name)
+                os.mkdir(folder_name)
+            else:
+                return 0
+
+        metadata_file = os.path.join(folder_name, "metadata.txt") 
+        with open(metadata_file, "w") as f:
+            f.write("M: \t %.2e\n"%self.M)
+            f.write("Mdot: \t %.2e\n"%self.mdot)
+            f.write("a: \t %.2e\n"%self.spin)
+
+        for i, line in enumerate(self.lines):
+            line_name = "line_%02d"%i
+            position_file = os.path.join(folder_name, line_name + "_positions.csv")
+            radiation_file = os.path.join(folder_name, line_name + "_radiation.csv")
+            position_data = {
+               'R' : line.r_hist,
+               'P' : line.phi_hist,
+               'Z' : line.z_hist,
+               'X' : line.x_hist,
+               'V_R' : line.v_r_hist,
+               'V_PHI' : line.v_phi_hist,
+               'V_Z' : line.v_z_hist,
+               'V_T' : line.v_T_hist,
+               'a' : line.a_hist,
+            }
+
+            df_pos = pd.DataFrame.from_dict(position_data)
+            df_pos.to_csv(position_file, index = False)
+
+            radiation_data = {
+                'rho' : line.rho_hist,
+                'xi' : line.xi_hist,
+                'fm' : line.fm_hist,
+                'tau_dr' : line.tau_dr_hist,
+                'tau_uv' : line.tau_uv_hist,
+                'tau_x' : line.tau_x_hist,
+                'dv_dr' : line.dv_dr_hist,
+                'dr_e' : line.dr_e_hist,
+            }
+            df_rad = pd.DataFrame.from_dict(radiation_data)
+            df_rad.to_csv(radiation_file, index = False)
+
+        return 1
+
+
+
+if __name__ == '__main__':
+    qwind = Qwind(modes = ['old_integral'], n_cpus = 3)
+    qwind.start_lines(niter=10000)
+    qwind.save_results("Results")

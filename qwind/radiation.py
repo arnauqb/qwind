@@ -1,5 +1,5 @@
 import numpy as np
-from qwind import aux_numba
+from qwind import aux_numba, integral
 import qwind.constants as const
 from scipy import optimize, integrate
 
@@ -7,7 +7,7 @@ from scipy import optimize, integrate
 This module handles the radiation transfer aspects of Qwind.
 """
 
-class Qwind():
+class Radiation():
     """
     Original implementation from RE2010.
     """
@@ -23,7 +23,7 @@ class Qwind():
         UV optical depth
         """
         
-        tau_uv_0 = (r - self.wind.r_init)
+        tau_uv_0 = (r_0 - self.wind.r_init)
         distance = np.sqrt(r**2 + z**2)
         delta_r = r - r_0
         sec_theta = distance / r
@@ -34,9 +34,8 @@ class Qwind():
         """
         Computes Ionization parameter.
         """
-
-        distance_2 = r**2. + z**2. 
-        xi = self.wind.xray_luminosity * np.exp(-tau_x) / ( rho_shielding * distance_2 * self.wind.Rg**2)
+        distance_2 = r**2. + z**2.
+        xi = self.wind.xray_luminosity * np.exp(-tau_x) / ( rho_shielding * distance_2 * self.wind.Rg**2) / 8.2125
         return xi
 
     def ionization_radius_kernel(self, rx):
@@ -71,9 +70,8 @@ class Qwind():
         """
 
         tau_x_0 = (self.r_x - self.wind.r_init) 
-        if ( self.r_x < r):
-            tau_x_0 += 100 * ( r - self.r_x)
-
+        if ( self.r_x < r_0):
+            tau_x_0 += 100 * ( r_0 - self.r_x)
         distance = np.sqrt(r**2+z**2)
         sec_theta = distance / r
         delta_r = r - r_0
@@ -125,7 +123,7 @@ class Qwind():
         """
         sobolev_length = self.wind.v_thermal / np.abs(dv_dr)
         sobolev_optical_depth = tau_dr * sobolev_length
-        return sobolev_optical_depth 
+        return sobolev_optical_depth
 
     def force_multiplier(self, t, xi):
         """
@@ -138,7 +136,6 @@ class Qwind():
         xi : float
             Ionisation Parameter.
         """
-
         k = self.k(xi)
         eta_max = self.eta_max(xi)
         tau_max = t * eta_max
@@ -155,10 +152,15 @@ class Qwind():
         Computes radiation force at point (r,z)
         """
 
+        abs_uv = np.exp(-tau_uv)
         if('old_integral' in self.wind.modes):
-            i_aux = aux_numba.qwind_integration( r, z, tau_uv)
+            i_aux = aux_numba.qwind_integration(r, z, abs_uv)
+        elif('non_adaptive' in self.wind.modes):
+            i_aux = integral.non_adaptive_integral(r,z, self.wind.r_min, self.wind.r_max)
+            i_aux = i_aux * abs_uv
         else:
-            i_aux = aux_numba.qwind_integration_dblquad(r, z, tau_uv, self.wind.r_min, self.wind.r_max)
+            i_aux = aux_numba.qwind_integration_dblquad(r, z, self.wind.r_min, self.wind.r_max)
+            i_aux = i_aux * abs_uv
 
         self.int_hist.append(i_aux)
         force = ( 1 + fm ) * self.force_radiation_constant * np.asarray([i_aux[0], 0., i_aux[1]])
