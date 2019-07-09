@@ -1,6 +1,7 @@
 """
 Auxiliary file for Numba functions.
 """
+
 import numpy as np
 import scipy
 from qwind import constants as const
@@ -62,6 +63,16 @@ def jit_integrand(integrand_function):
 
 @jit(nopython=True)
 def _Distance_gas_disc(r_d, phi_d, r, z):
+    """
+    Distance between a disc element at (r_d, phi_d), and at a gas blob at (r,0,z).
+    Args:
+        r_d: disc element radial coordinate.
+        phi_d: disc element angular coordinate.
+        r: gas blob radial coordinate.
+        z: gas blob height coordinate.
+    Returns:
+        Distance between disc element and gas blob.
+    """
     return np.sqrt(
         r ** 2. +
         r_d ** 2. +
@@ -72,28 +83,53 @@ def _Distance_gas_disc(r_d, phi_d, r, z):
         np.cos(phi_d))
 
 @jit(nopython=True)
-def _qwind_integral_kernel(r_d, phi_d, deltaphi, deltar, r, z, abs_uv):
-    ff0 = (1. - np.sqrt(6. / r_d)) / r_d ** 3.
-    delta = _Distance_gas_disc(r_d, phi_d, r, z)
-    cos_gamma = (r - r_d * np.cos(phi_d)) / delta
-    sin_gamma = z / delta
-    darea = r_d * deltar * deltaphi
-    ff = 2. * ff0 * darea * sin_gamma / delta ** 2. * abs_uv
-    return [ff * cos_gamma, ff * sin_gamma]
+def _qwind_integral_kernel(r_d, phi_d, r, z):
+    """
+    Kernel of the radiation force integral.
+
+    Args:
+        r_d: disc element radial coordinate.
+        phi_d: disc element angular coordinate.
+        deltaphi: spacing of the interval of the angular integration.
+        deltar: spacing of the interval of the radial integration.
+        r: gas blob r coordinate.
+        z: gas blob z coordinate.
+
+    Returns:
+        array[0]: kernel for the radial integration.
+        array[1]: kernel for the z integration.
+    """
+    #delta = _Distance_gas_disc(r_d, phi_d, r, z)
+    delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
+    cos_gamma = (r - r_d * np.cos(phi_d)) 
+    ff = 1.  / delta ** 2.
+    return [ff * cos_gamma, ff ]
 
 
 @jit(nopython=True)
-def qwind_integration(r, z, abs_uv):
+def qwind_integration(r, z):
     """
-    Old integration method. Much faster, but poor convergence near the disc.
+    RE2010 integration method. Much faster, but poor convergence near the disc, since it is a non adaptive method.
+
+    Args:
+        r: gas blob radial coordinate
+        z: gas blob height coordinate
     """
     integral = [0., 0.]
     for i in range(0, len(deltards)):
+        deltar = deltards[i]
+        r_d = rds[i]
+        ff0 = (1. - np.sqrt(6. / r_d)) / r_d ** 2.
         for j in range(0, len(deltaphids)):
-            aux = _qwind_integral_kernel(
-                rds[i], phids[j], deltaphids[j], deltards[i], r, z, abs_uv)
-            integral[0] += aux[0]
-            integral[1] += aux[1]
+            phi_d = phids[j]
+            deltaphi = deltaphids[j]
+            aux = _qwind_integral_kernel(r_d, phi_d,  r, z)
+            integral[0] += aux[0] * deltaphi
+            integral[1] += aux[1] * deltaphi
+        integral[0] = integral[0] * deltar * ff0
+        integral[1] = integral[1] * deltar * ff0
+    integral[0] = 2. * z * integral[0]
+    integral[1] = 2. * z**2 * integral[1]
     return integral
 
 

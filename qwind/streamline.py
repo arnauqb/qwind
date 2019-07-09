@@ -1,3 +1,7 @@
+"""
+This module implements the streamline class, that initializes and evolves a streamline from the disc.
+"""
+
 import numpy as np
 import scipy.integrate
 from qwind import utils
@@ -12,7 +16,7 @@ if(backend == 'jupyter'):
 else:
     from tqdm import tqdm
     #tqdm = tqdm_dump
-IT = 1
+
 class streamline():
     """
     This class represents a streamline. It inherits from the wind class all the global properties of the accretion disc, black hole and atmosphere.
@@ -31,24 +35,16 @@ class streamline():
             dt = 4.096 / 10.
             ):
         """
-        Parameters
-        ----------
-        parent : object
-            Parents class (wind object), to inherit global continueproperties.
-        r_0 : float
-            Initial radius in Rg units.
-        z_0: float
-            Initial height in Rg units.
-        rho_0 : float
-            Initial number density. Units of 1/cm^3.
-        T : float
-            Initial stramline temperature.
-        v_r_0 : float
-            Initial radial velocity in units of cm/s.
-        v_z_0 : float
-            Initial vertical velocity in units of cm/s.
-        dt : float
-            Timestep in units of Rg/c.
+        Args:
+            radiation_class: radiation class used.
+            parent : Parents class (wind object), to inherit global properties.
+            r_0 : Initial radius in Rg units.
+            z_0: Initial height in Rg units.
+            rho_0 : Initial number density. Units of 1/cm^3.
+            T : Initial streamline temperature in K.
+            v_z_0 : Initial vertical velocity in units of cm/s.
+            v_r_0 : Initial radial velocity in units of cm/s.
+            dt : Timestep in units of Rg/c.
         """
         
     
@@ -143,13 +139,18 @@ class streamline():
     ## streaming ##
     ###############
 
-    def UpdateDensity(self):
+    def update_density(self):
         """
-        Updates density of streamline.
+        Updates the density of the streamline at the current position.
+        If the density is below a critical value ( 10 cm/s ), then the density is left unchanged.
+
+        Returns:
+            rho: updated density at the current point.
         """
-        if(self.v_z < 0):
+        if(self.v_z < 3.33e-10):
             self.rho_hist.append(self.rho)
             return self.rho
+
         radial = (self.r / self.r_0) ** (-2.)
         v_ratio = self.v_z_0 / np.linalg.norm(np.asarray(self.v)[[0,2]]) 
         self.rho = self.rho_0 * radial * v_ratio
@@ -157,9 +158,12 @@ class streamline():
         self.rho_hist.append(self.rho)
         return self.rho
 
-    def Force_gravity(self):
+    def force_gravity(self):
         """
-        Computes gravity force.
+        Computes gravitational force at the current position. 
+
+        Returns:
+            grav: graviational force per unit mass in units of c^2 / Rg.
         """
         
         array = np.asarray([self.r / self.d, 0., self.z / self.d])
@@ -168,123 +172,24 @@ class streamline():
 
    ## kinematics ##
 
-
-    def UpdatePositionsOld(self):
-        
-        # compute acceleration vector #
-        fg = self.Force_gravity()
-        fr = self.radiation.force_radiation(self.r, self.z, self.fm, self.tau_uv)
-        self.a = fg + fr
-        self.Fgrav.append(fg)
-        self.Frad.append(fr)
-        self.a_hist.append(self.a)
-        
-        r = self.r
-        
-        dx = np.asarray(self.v) * self.dt + 0.5 * np.asarray(self.a) * self.dt**2.
-        rnew = np.sqrt( (r + dx[0])**2. + (dx[1])**2. )
-        dphi = np.arctan2( dx[1] , r+dx[0]) 
-        
-        self.r = rnew
-        self.phi += dphi
-        self.z += dx[2]
-
-        # debug
-        #global IT
-        #self.r = self.r_0 + IT * 0.1
-        #self.z = 1 + IT * 0.1
-        #IT += 1
-
-        vrn  = self.v_r  +  self.a[0] * self.dt;
-        vphi =  self.v_phi;
-        dvz = self.a[2] * self.dt;
-        sin_dphi = dx[1] / rnew;
-        cos_dphi = ( r + dx[0] ) / rnew;
-
-        dvr1 = self.v_r * ( cos_dphi - 1.0 );
-        dvr2 = self.a[0] * self.dt  * cos_dphi + vphi * sin_dphi;
-        dvr = dvr1 + dvr2;
-        #print("dvr1: %e "%dvr1)
-        #print("dvr2: %e "%dvr2)
-        #print("vphi: %e"%vphi)
-        #print("a_r: %e"%self.a[0])
-        #print("cos: %e "%cos_dphi)
-        #print("sin: %e "%sin_dphi)
-        
-        dvp1 = vphi * ( cos_dphi - 1.0 );
-        dvp2 =  - vrn  * sin_dphi;
-        dvp = dvp1 + dvp2;
-        self.v_r   += dvr;
-        self.v_phi += dvp;
-        self.v_z   += dvz;
-        self.x = [self.r, self.phi, self.z]
-        self.v = [self.v_r, self.v_phi, self.v_z]
-
-        # compute dv_dr #
-        v2 = np.linalg.norm(np.asarray(self.v_hist[-1])[[0,2]]) #
-        #v2 = self.wind.norm2d(self.v_hist[-1])
-        self.delta_r = np.linalg.norm(np.asarray(self.x)[[0,2]] - np.asarray(self.x_hist[-1])[[0,2]])#self.wind.dist2d(self.x, self.x_hist[-1])#
-        #print(self.x, print(self.x_hist[-1]))
-        self.vtot = np.linalg.norm(np.asarray(self.v)[[0,2]]) #self.wind.norm2d(self.v) #
-        dvr = self.v_r_hist[-1] - self.v_r
-        dvz = self.v_z_hist[-1] - self.v_z
-        dvt = (self.v[0] * dvr + self.v[2] * dvz) / v2
-        self.dvt_hist.append(dvt)
-        self.v2_hist.append(v2)
-        if (abs(dvt) < 0.01 * v2):
-            self.dv_dr = dvt / self.delta_r
-        else:
-            self.dv_dr = (self.vtot - v2) / self.delta_r
-            
-        self.dv_dr_hist.append(self.dv_dr)
-     
-        # append to history #
-        self.d = np.sqrt(self.r**2 + self.z**2)
-        self.d_hist.append(self.d)
-        self.r_hist.append(self.r)
-        self.phi_hist.append(self.phi)
-        self.z_hist.append(self.z)
-        self.x_hist.append(self.x)
-
-        self.v_r_hist.append(self.v_r)
-        self.v_phi_hist.append(self.v_phi)
-        self.v_z_hist.append(self.v_z)
-        self.v_hist.append(self.v)
-
-        # spherical radius velocity #
-
-        self.v_T = np.sqrt(self.v_r ** 2 + self.v_z**2)
-        self.v_T_hist.append(self.v_T)
-
-        # finally update time #
-        self.t = self.t + self.dt
-        self.t_hist.append(self.t)
-        
-    def norm2d(self, vector):
-        return np.sqrt(vector[0] ** 2 + vector[-1] ** 2)
-
-    def UpdatePositions(self):
+    def update_positions(self):
         """
-        Updates position of streamline.
+        Updates position of streamline, by solving the equation of motion using a simple Euler integration.
         """
         # compute acceleration vector #
-        fg = self.Force_gravity()
+        fg = self.force_gravity()
         fr = self.radiation.force_radiation(self.r, self.z, self.fm, self.tau_uv)
-        self.Fgrav.append(fg)
-        self.Frad.append(fr)
-        self.a = np.copy(fg)
-        if('gravityonly' in self.wind.modes):
+        self.a = fg 
+        if('gravityonly' in self.wind.modes): # useful for debugging
             self.a += 0.
         else:
             self.a += fr
 
-        self.a[0] += self.l**2 / self.r**3
-        self.a_hist.append(self.a)
+        self.a[0] += self.l**2 / self.r**3 # centrifugal term
 
         # update r #
         rnew = self.r + self.v_r * self.dt + 0.5 * self.a[0] * self.dt**2
         vrnew = self.v_r + self.a[0] * self.dt
-        #print("V: %e \n Fr_grava: %e \n"%(self.v_r, self.a[0] ))
 
         # update z #
         znew = self.z + self.v_z * self.dt + 0.5 * self.a[2] * self.dt**2
@@ -294,20 +199,11 @@ class streamline():
         phinew = self.phi + self.l / self.r**2 * self.dt
         vphinew = self.l / self.r
 
+        # store new positions
         self.r = rnew
-        #self.r = self.r_debug
         self.v_r = vrnew
-        #global IT
-        #self.v_r = 0.0002 * IT
-
         self.z = znew
-        #self.z = self.z_debug
-        # debug
-        #self.r = self.r_0 + IT * 0.1
-        #self.z = 1 + IT * 0.1
-        #IT += 1
         self.v_z = vznew
-        #self.v_z = 0.001 + 0.0002 * IT
         self.phi = phinew
         self.v_phi = vphinew
         self.x = [self.r, self.phi, self.z]
@@ -315,40 +211,17 @@ class streamline():
 
         # compute dv_dr #
         v2 = np.linalg.norm(np.asarray(self.v_hist[-1])[[0,2]]) #
-        #v2 = self.wind.norm2d(self.v_hist[-1])
-        self.delta_r = np.linalg.norm(np.asarray(self.x)[[0,2]] - np.asarray(self.x_hist[-1])[[0,2]])#self.wind.dist2d(self.x, self.x_hist[-1])#
-        #print(self.x, print(self.x_hist[-1]))
-        self.vtot = np.linalg.norm(np.asarray(self.v)[[0,2]]) #self.wind.norm2d(self.v) #
+        self.delta_r = np.linalg.norm(np.asarray(self.x)[[0,2]] - np.asarray(self.x_hist[-1])[[0,2]])
+        self.vtot = np.linalg.norm(np.asarray(self.v)[[0,2]]) 
         dvr = self.v_r_hist[-1] - self.v_r
         dvz = self.v_z_hist[-1] - self.v_z
         dvt = (self.v[0] * dvr + self.v[2] * dvz) / v2
-        self.dvt_hist.append(dvt)
-        self.v2_hist.append(v2)
-        if (abs(dvt) < 0.01 * v2):
+        if (abs(dvt) < 0.01 * v2): # catch possible round off numerical error.
             self.dv_dr = dvt / self.delta_r
         else:
             self.dv_dr = (self.vtot - v2) / self.delta_r
-            
-        
-        self.dv_dr_hist.append(self.dv_dr)
 
-        # append to history #
-        self.d = np.sqrt(self.r**2 + self.z**2)
-        self.d_hist.append(self.d)
-        self.r_hist.append(self.r)
-        self.phi_hist.append(self.phi)
-        self.z_hist.append(self.z)
-        self.x_hist.append(self.x)
-
-        #self.v_r = self.v_r_debug
-        #self.v_z = self.v_z_debug
-        self.v_r_hist.append(self.v_r)
-        self.v_phi_hist.append(self.v_phi)
-        self.v_z_hist.append(self.v_z)
-        self.v_hist.append(self.v)
-
-        # spherical radius velocity #
-
+        # total velocity #
         self.v_T = np.sqrt(self.v_r ** 2 + self.v_z**2)
         self.v_T_hist.append(self.v_T)
 
@@ -356,73 +229,71 @@ class streamline():
         self.t = self.t + self.dt
         self.t_hist.append(self.t)
 
-    def UpdateRadiation(self):
+        # append to history all the data for plotting and debugging#
+        self.d = np.sqrt(self.r**2 + self.z**2)
+        self.d_hist.append(self.d)
+        self.r_hist.append(self.r)
+        self.phi_hist.append(self.phi)
+        self.z_hist.append(self.z)
+        self.x_hist.append(self.x)
+        self.v_r_hist.append(self.v_r)
+        self.v_phi_hist.append(self.v_phi)
+        self.v_z_hist.append(self.v_z)
+        self.v_hist.append(self.v)
+        self.Fgrav.append(fg)
+        self.Frad.append(fr)
+        self.a_hist.append(self.a)
+        self.dvt_hist.append(dvt)
+        self.v2_hist.append(v2)
+        self.dv_dr_hist.append(self.dv_dr)
+
+    def update_radiation(self):
         """
         Updates all parameters related to the radiation field, given the new streamline position.
         """
-
-        self.rho = self.UpdateDensity()
-        #print("rho: %e \n"%self.rho)
+        self.rho = self.update_density()
         self.tau_dr = self.wind.tau_dr(self.rho)
-        self.tau_dr_hist.append(self.tau_dr)
-        
         self.tau_eff = self.radiation.sobolev_optical_depth(self.tau_dr, self.dv_dr)
-        self.tau_eff = self.tau_eff
+        self.tau_eff = min(self.tau_eff, self.d) # prevent effective optical depth to grow unphyisically large.
+        self.tau_uv = self.radiation.optical_depth_uv(self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_0)
+        self.tau_x = self.radiation.optical_depth_x(self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_0, self.wind.rho_shielding)
+        self.xi = self.radiation.ionization_parameter(self.r,self.z, self.tau_x, self.rho)
+        self.fm = self.radiation.force_multiplier(self.tau_eff, self.xi)
+        
+        # append to history #
+        self.tau_dr_hist.append(self.tau_dr)
         self.dr_e_hist.append(self.tau_eff/self.tau_dr)
         self.tau_eff_hist.append(self.tau_eff)
-        #print("dr_e: %e"%self.dr_e_hist[-1])
-        #print(self.tau_eff)
-        
-
-        self.tau_uv = self.radiation.optical_depth_uv(self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_0)
         self.tau_uv_hist.append(self.tau_uv)
-
-        self.tau_x = self.radiation.optical_depth_x(self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_0, self.wind.rho_shielding)
         self.tau_x_hist.append(self.tau_x)
-        self.xi = self.radiation.ionization_parameter(self.r,self.z, self.tau_x, self.rho)
         self.xi_hist.append(self.xi)
-        self.fm = self.radiation.force_multiplier(self.tau_eff, self.xi)
         self.fm_hist.append(self.fm)
-        
-        return 0
 
-    def Step(self):
+    def step(self):
         """
         Performs time step.
         """
         # update positions and velocities #
-        self.UpdatePositions()
+        self.update_positions()
         # update radiation field #
-        self.UpdateRadiation()
+        self.update_radiation()
 
 
     def iterate(self, niter=5000):
         """
         Iterates the streamline
         
-        Paramters
-        ---------
-        
-        niter : int
-            Number of iterations
+        Args:        
+            niter : Number of iterations
         """
-        #debug 
-        #trajectory = np.loadtxt("trajectory.txt")
-        #r_range, z_range, v_r_range, v_z_range = trajectory
         for it in tqdm(range(0, niter)):
-            #execute time step #
-            #self.r_debug = r_range[it+1]
-            #self.z_debug = z_range[it+1]
-            #self.v_r_debug = v_r_range[it+1] 
-            #self.v_z_debug = v_z_range[it+1] 
-            self.Step()
+            self.step()
             # record number of iterations #
             self.it = it
             self.iter.append(it)
             
             if (it == 99):
-                # update time step #
-                print("updating time step from %f to %f"%(self.dt, self.dt*10))
+                # update time step  at 100 iterations#
                 self.dt = self.dt * 10.
 
             # termination condition for a failed wind #
