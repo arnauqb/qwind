@@ -99,10 +99,9 @@ def _qwind_integral_kernel(r_d, phi_d, r, z):
         array[0]: kernel for the radial integration.
         array[1]: kernel for the z integration.
     """
-    #delta = _Distance_gas_disc(r_d, phi_d, r, z)
     delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
     cos_gamma = (r - r_d * np.cos(phi_d)) 
-    ff = 1.  / delta ** 2.
+    ff = 1. / delta ** 2.
     return [ff * cos_gamma, ff ]
 
 
@@ -117,6 +116,7 @@ def qwind_integration(r, z):
     """
     integral = [0., 0.]
     for i in range(0, len(deltards)):
+        int_step = [0., 0.,]
         deltar = deltards[i]
         r_d = rds[i]
         ff0 = (1. - np.sqrt(6. / r_d)) / r_d ** 2.
@@ -124,12 +124,12 @@ def qwind_integration(r, z):
             phi_d = phids[j]
             deltaphi = deltaphids[j]
             aux = _qwind_integral_kernel(r_d, phi_d,  r, z)
-            integral[0] += aux[0] * deltaphi
-            integral[1] += aux[1] * deltaphi
-        integral[0] = integral[0] * deltar * ff0
-        integral[1] = integral[1] * deltar * ff0
+            int_step[0] += aux[0] * deltaphi
+            int_step[1] += aux[1] * deltaphi
+        integral[0] += int_step[0] * deltar * ff0
+        integral[1] += int_step[1] * deltar * ff0
     integral[0] = 2. * z * integral[0]
-    integral[1] = 2. * z**2 * integral[1]
+    integral[1] = 2. * z**2. * integral[1]
     return integral
 
 

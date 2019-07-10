@@ -54,7 +54,7 @@ class Radiation():
             ionization parameter.
         """
         distance_2 = r**2. + z**2.
-        xi = self.wind.xray_luminosity * np.exp(-tau_x) / ( rho_shielding * distance_2 * self.wind.Rg**2)
+        xi = self.wind.xray_luminosity * np.exp(-tau_x) / ( rho_shielding * distance_2 * self.wind.Rg**2) / 8.2125
         return xi
 
     def ionization_radius_kernel(self, rx):
@@ -172,7 +172,7 @@ class Radiation():
         Returns:
             fm : force multiplier.
         """
-        xi = xi / 8.2125 # this factor converts xi to Xi, the other ionization parameter definition which differs by a factor of (4 pi Ryd c).
+        #xi = xi / 8.2125 # this factor converts xi to Xi, the other ionization parameter definition which differs by a factor of (4 pi Ryd c).
         k = self.k(xi)
         eta_max = self.eta_max(xi)
         tau_max = t * eta_max
@@ -206,8 +206,8 @@ class Radiation():
         else:
             i_aux = aux_numba.qwind_integration_dblquad(r, z, self.wind.r_min, self.wind.r_max)
 
-        abs_uv = np.exp(-tau_uv)
         self.int_hist.append(i_aux)
+        abs_uv = np.exp(-tau_uv)
         force = ( 1 + fm ) * abs_uv * self.force_radiation_constant * np.asarray([i_aux[0], 0., i_aux[1]])
         return force
 

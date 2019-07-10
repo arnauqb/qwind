@@ -223,11 +223,9 @@ class streamline():
 
         # total velocity #
         self.v_T = np.sqrt(self.v_r ** 2 + self.v_z**2)
-        self.v_T_hist.append(self.v_T)
 
         # finally update time #
         self.t = self.t + self.dt
-        self.t_hist.append(self.t)
 
         # append to history all the data for plotting and debugging#
         self.d = np.sqrt(self.r**2 + self.z**2)
@@ -246,6 +244,8 @@ class streamline():
         self.dvt_hist.append(dvt)
         self.v2_hist.append(v2)
         self.dv_dr_hist.append(self.dv_dr)
+        self.v_T_hist.append(self.v_T)
+        self.t_hist.append(self.t)
 
     def update_radiation(self):
         """
