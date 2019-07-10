@@ -28,7 +28,7 @@ class Qwind:
     """
     A class used to represent the global properties of the wind, i.e, the accretion disc and black hole properties as well as attributes shared among streamlines.
     """
-    def __init__(self, M = 2e8, mdot = 0.5, spin=0.,eta=0.0313, fx = 0.15, r_in = 200, r_out = 1600, r_min = 6., r_max=1400, T=2e6, mu = 1, modes =[], rho_shielding = 2e8, intsteps=1, nr=20, save_dir="Results", radiation_mode = "Qwind", n_cpus = 1):
+    def __init__(self, M = 2e8, mdot = 0.5, spin=0.,eta=0.06, r_in = 200, r_out = 1600, r_min = 6., r_max=1400, T=2e6, mu = 1, modes =[], rho_shielding = 2e8, intsteps=1, nr=20, save_dir="Results", radiation_mode = "Qwind", n_cpus = 1):
         """
         Parameters
         ----------
@@ -42,8 +42,6 @@ class Qwind:
             Spin black hole parameter between [0,1]
         eta : float
             Accretion efficiency (default is for scalar black hole).
-        fx : float
-            Ratio of luminosity in X-Rays, fx = Lx / Lbolumetric
         Rmin : float
             Minimum radius of acc. disc, default is ISCO for scalar black hole.
         Rmax : float
@@ -51,7 +49,7 @@ class Qwind:
         T : float
             Temperature of the disc atmosphere. Wind is assumed to be isothermal.
         mu : float
-            Mean molecular weight ( 1 = pure hydrogen)
+            Mean molecular weight ( 1 = pure atomic hydrogen)
         modes : list 
             List of modes for debugging purposes. Available modes are:
                 - 'old_integral': Non adaptive disc integration (much faster but convergence is unreliable.)
@@ -74,7 +72,6 @@ class Qwind:
         self.mdot = mdot
         self.spin = spin
         self.mu = mu
-        self.fx = fx
         self.r_min = r_min 
         self.r_max = r_max 
         self.r_in = r_in
@@ -85,7 +82,7 @@ class Qwind:
         self.Rg = const.G * self.M / (const.c ** 2) # gravitational radius
         self.rho_shielding = rho_shielding
         self.bol_luminosity = self.mdot * self.eddington_luminosity
-        self.xray_luminosity = self.mdot * self.eddington_luminosity * self.fx
+        self.radiation = radiation.Radiation(self)
         
         self.tau_dr_0 = self.tau_dr(rho_shielding)
         self.v_thermal = self.thermal_velocity(T)
@@ -302,6 +299,6 @@ class Qwind:
 
 
 if __name__ == '__main__':
-    qwind = Qwind(modes = ['old_integral'], n_cpus = 3)
+    qwind = Qwind( n_cpus = 3)
     qwind.start_lines(niter=10000)
-    qwind.save_results("Results")
+    qwind.save_results("Results_0.06")

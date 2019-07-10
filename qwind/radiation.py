@@ -6,6 +6,7 @@ import numpy as np
 from qwind import aux_numba, integral
 import qwind.constants as const
 from scipy import optimize, integrate
+from pyagn import sed
 
 
 class Radiation():
@@ -15,9 +16,37 @@ class Radiation():
 
     def __init__(self, wind):
         self.wind = wind
+        self.sed_class = sed.SED(M = wind.M / const.Ms, mdot = wind.mdot, astar = wind.spin)
+        distance = 3e26
+        self.sed_flux = self.sed_class.total_flux(distance)
+        self.sed_class.plot_total_flux(distance)
+        self.sed_energy_range = self.sed_class.energy_range
+        self.uv_fraction, self.xray_fraction = self.compute_uv_and_xray_fraction()
+        self.xray_luminosity = self.wind.mdot * self.wind.eddington_luminosity * self.xray_fraction
         self.r_x = self.ionization_radius()
-        self.force_radiation_constant =  3. * self.wind.mdot / (8. * np.pi * self.wind.eta) * (1 - self.wind.fx)
+        self.force_radiation_constant =  3. * self.wind.mdot / (8. * np.pi * self.wind.eta) * self.uv_fraction 
         self.int_hist = []
+
+    def compute_uv_and_xray_fraction(self):
+        """
+        Computes the UV to X-Ray ratio from the SED.
+        We consider X-Ray all the ionizing radiation above 0.1 keV,
+        and UV all radiation between 0.001 keV and 0.1 keV.
+        """
+        xray_mask = self.sed_energy_range > 0.1
+        uv_mask = (self.sed_energy_range > 0.001) & (self.sed_energy_range < 0.1)
+        xray_flux = self.sed_flux[xray_mask]
+        uv_flux = self.sed_flux[uv_mask]
+        xray_energy_range = self.sed_energy_range[xray_mask]
+        uv_energy_range = self.sed_energy_range[uv_mask]
+        xray_int_flux = integrate.trapz(x=xray_energy_range, y = xray_flux / xray_energy_range)
+        uv_int_flux = integrate.trapz(x=uv_energy_range, y = uv_flux / uv_energy_range)
+        total_flux = integrate.trapz(x=self.sed_energy_range, y = self.sed_flux / self.sed_energy_range)
+        uv_fraction = uv_int_flux / total_flux
+        xray_fraction = xray_int_flux / total_flux
+        print("xray fraction: %f \n uv_fraction: %f \n"%(xray_fraction, uv_fraction))
+        return uv_fraction, xray_fraction
+
 
     def optical_depth_uv(self, r, z, r_0, tau_dr, tau_dr_0):
         """
@@ -54,7 +83,7 @@ class Radiation():
             ionization parameter.
         """
         distance_2 = r**2. + z**2.
-        xi = self.wind.xray_luminosity * np.exp(-tau_x) / ( rho_shielding * distance_2 * self.wind.Rg**2) / 8.2125
+        xi = self.xray_luminosity * np.exp(-tau_x) / ( rho_shielding * distance_2 * self.wind.Rg**2) / 8.2125
         return xi
 
     def ionization_radius_kernel(self, rx):
@@ -74,7 +103,16 @@ class Radiation():
         """
         Computes the disc radius at which xi = xi_0 using the bisect method.
         """
-        r_x = optimize.bisect(self.ionization_radius_kernel, self.wind.r_in, self.wind.r_out)
+        try:
+            r_x = optimize.bisect(self.ionization_radius_kernel, self.wind.r_min, self.wind.r_max)
+        except:
+            print("ionization radius outside the disc.")
+            if(self.ionization_radius_kernel(self.wind.r_min) > 0):
+                print("ionization radius is below r_min, nothing is ionized.")
+                r_x = self.wind.r_min
+            else:
+                print("ionization radius is very large, atmosphere is completely ionized.")
+                r_x = self.wind.r_max
         return r_x 
 
     def opacity_x_r(self, r):
@@ -201,10 +239,10 @@ class Radiation():
 
         if('old_integral' in self.wind.modes):
             i_aux = aux_numba.qwind_integration(r, z)
-        elif('non_adaptive' in self.wind.modes):
-            i_aux = integral.non_adaptive_integral(r,z, self.wind.r_min, self.wind.r_max)
+        elif('old_quad' in self.wind.modes):
+            i_aux = aux_numba.qwind_integration_dblquad(r,z, self.wind.r_min, self.wind.r_max)
         else:
-            i_aux = aux_numba.qwind_integration_dblquad(r, z, self.wind.r_min, self.wind.r_max)
+            i_aux = aux_numba.integration_quad(r, z, self.wind.r_min, self.wind.r_max)
 
         self.int_hist.append(i_aux)
         abs_uv = np.exp(-tau_uv)

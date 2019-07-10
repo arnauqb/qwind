@@ -90,8 +90,6 @@ def _qwind_integral_kernel(r_d, phi_d, r, z):
     Args:
         r_d: disc element radial coordinate.
         phi_d: disc element angular coordinate.
-        deltaphi: spacing of the interval of the angular integration.
-        deltar: spacing of the interval of the radial integration.
         r: gas blob r coordinate.
         z: gas blob z coordinate.
 
@@ -108,11 +106,15 @@ def _qwind_integral_kernel(r_d, phi_d, r, z):
 @jit(nopython=True)
 def qwind_integration(r, z):
     """
-    RE2010 integration method. Much faster, but poor convergence near the disc, since it is a non adaptive method.
+    RE2010 integration method. Faster, but poor convergence near the disc, since it is a non adaptive method.
 
     Args:
         r: gas blob radial coordinate
         z: gas blob height coordinate
+
+    Returns:
+        array[0]: Result of the radial integration.
+        array[1]: Result of the z integration.
     """
     integral = [0., 0.]
     for i in range(0, len(deltards)):
@@ -132,62 +134,62 @@ def qwind_integration(r, z):
     integral[1] = 2. * z**2. * integral[1]
     return integral
 
+#@jit(nopython = True)
+@jit_integrand
+def integration_quad_r_phid(phi_d, r_d, r, z):
+    aux1 = (r - r_d * np.cos(phi_d))
+    delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
+    result = aux1 / delta**2.
+    return result 
+
+@jit_integrand
+def integration_quad_z_phid(phi_d, r_d, r, z):
+    delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
+    result = 1. / delta**2.
+    return result 
+
+@jit()
+def integration_quad_r_rd(r_d, r, z):
+    phi_int = quad(integration_quad_r_phid, 0., np.pi, args = (r_d, r, z))[0]
+    ff0 = (1. - np.sqrt(6./r_d)) / r_d**2.
+    result = ff0 * phi_int
+    return result 
+
+@jit()
+def integration_quad_z_rd(r_d, r, z):
+    phi_int = quad(integration_quad_z_phid, 0., np.pi, args = (r_d, r, z))[0]
+    ff0 = (1. - np.sqrt(6./r_d)) / r_d**2.
+    result = phi_int * ff0
+    return result 
+@jit()
+def integration_quad(r, z, r_min, r_max):
+    r_part = quad(integration_quad_r_rd, r_min, r_max, args = (r,z), points = [r])[0]
+    z_part = quad(integration_quad_z_rd, r_min, r_max, args = (r,z), points = [r])[0]
+    r_part = 2. * z * r_part
+    z_part = 2. * z**2 * z_part
+    return [r_part, z_part]
+
+####
 
 @jit_integrand
 def _integrate_dblquad_kernel_r(r_d, phi_d, r, z):
-    ff0 = (1. - np.sqrt(6. / r_d)) / r_d ** 3.
-    #delta = _Distance_gas_disc(r_d, phi_d, r, z)
-    delta = np.sqrt(r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d))
-    cos_gamma = (r - r_d * np.cos(phi_d)) / delta
-    sin_gamma = z / delta
-    darea = r_d 
-    ff = 2. * ff0 * darea * sin_gamma / delta ** 2. 
-    return ff * cos_gamma 
-
+    ff0 = (1. - np.sqrt(6. / r_d)) / r_d ** 2.
+    delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
+    cos_gamma = (r - r_d * np.cos(phi_d)) / delta**2.
+    ff = ff0 * cos_gamma
+    return ff
 
 @jit_integrand
 def _integrate_dblquad_kernel_z(r_d, phi_d, r, z):
-    ff0 = (1. - np.sqrt(6. / r_d)) / r_d ** 3.
-    delta = np.sqrt(r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d))
-    sin_gamma = z / delta
-    darea = r_d 
-    ff = 2. * ff0 * darea * sin_gamma / delta ** 2. 
-    return ff * sin_gamma
+    ff0 = (1. - np.sqrt(6. / r_d)) / r_d ** 2.
+    delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
+    ff = ff0 * 1./ delta**2. 
+    return ff
 
-
-def old_qwind_integration_dblquad(r, z, Rmin, Rmax):
-    r_int = abs_uv * scipy.integrate.dblquad(_integrate_dblquad_kernel_r, 0, np.pi, Rmin, Rmax, args=(r,z))[0]
-    z_int = abs_uv * scipy.integrate.dblquad(_integrate_dblquad_kernel_z, 0, np.pi, Rmin, Rmax, args=(r,z))[0]
-    return [r_int, z_int]
-
-
+@jit()
 def qwind_integration_dblquad(r, z, Rmin, Rmax):
-
-    integral_r = 2 * z**2. * scipy.integrate.quad(integration_r_kernel_rd, Rmin, Rmax, args = (r,z))[0]
-    integral_z = 2 * z * scipy.integrate.quad(integration_z_kernel_rd, Rmin, Rmax, args = (r,z))[0]
-    return [integral_r, integral_z]
-
-@jit_integrand
-def integration_r_kernel_phid(phi_d, r_d, r, z):
-    aux = (r - r_d * np.cos(phi_d))
-    delta = np.sqrt(r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d))
-    return aux / delta**4.
-
-@jit()
-def integration_r_kernel_rd(r_d, r, z):
-
-    aux = (1. - np.sqrt(6 / r_d)) / r_d**2.
-    int_phi = scipy.integrate.quad(integration_r_kernel_phid, 0, np.pi, args = (r_d, r, z))[0]
-    return aux * int_phi
-
-@jit_integrand
-def integration_z_kernel_phid(phi_d, r_d, r, z):
-    delta = np.sqrt(r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d))
-    return 1. / delta**4.
-
-@jit()
-def integration_z_kernel_rd(r_d, r, z):
-    aux = (1. - np.sqrt(6 / r_d)) / r_d**2.
-    int_phi = scipy.integrate.quad(integration_z_kernel_phid, 0, np.pi, args = (r_d, r, z))[0]
-    return aux * int_phi
-
+    r_int, r_error = scipy.integrate.dblquad(_integrate_dblquad_kernel_r, 0+0.001, np.pi-0.001, Rmin, Rmax, args=(r,z))
+    z_int, z_error  = scipy.integrate.dblquad(_integrate_dblquad_kernel_z, 0+0.001, np.pi-0.001, Rmin, Rmax, args=(r,z))
+    r_int = 2. * z * r_int
+    z_int = 2. * z**2 * z_int
+    return [r_int, z_int, r_error, z_error]
