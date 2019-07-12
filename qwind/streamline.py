@@ -6,6 +6,7 @@ import numpy as np
 import scipy.integrate
 from qwind import utils
 from qwind import constants as const
+import pickle
 
 # check backend to import appropiate progress bar #
 def tqdm_dump(array):
@@ -304,6 +305,7 @@ class streamline():
             # record when streamline escapes #
             if(self.v_T > self.wind.v_esc(self.d) and (not self.escaped)):
                 self.escaped = True
+                print("escape velocity reached.")
             a_t = np.sqrt(self.a[0]**2 + self.a[2]**2)
 
             #termination condition for an escaped wind #

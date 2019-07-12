@@ -28,7 +28,22 @@ class Qwind:
     """
     A class used to represent the global properties of the wind, i.e, the accretion disc and black hole properties as well as attributes shared among streamlines.
     """
-    def __init__(self, M = 2e8, mdot = 0.5, spin=0.,eta=0.06, r_in = 200, r_out = 1600, r_min = 6., r_max=1400, T=2e6, mu = 1, modes =[], rho_shielding = 2e8, intsteps=1, nr=20, save_dir="Results", radiation_mode = "Qwind", n_cpus = 1):
+    def __init__(self, M = 2e8,
+                mdot = 0.5, 
+                spin=0.,eta=0.06, 
+                r_in = 200, 
+                r_out = 1600, 
+                r_min = 6., 
+                r_max=1400, 
+                T=2e6, 
+                mu = 1, 
+                modes =[], 
+                rho_shielding = 2e8, 
+                intsteps=1, 
+                nr=20, 
+                save_dir="Results", 
+                radiation_mode = "Qwind", 
+                n_cpus = 1):
         """
         Parameters
         ----------
@@ -83,7 +98,9 @@ class Qwind:
         self.rho_shielding = rho_shielding
         self.bol_luminosity = self.mdot * self.eddington_luminosity
         self.radiation = radiation.Radiation(self)
-        
+        self.r_in = 2. * self.radiation.sed_class.corona_radius
+        self.r_out = self.radiation.sed_class.gravity_radius
+        print("r_in: %f \n r_out: %f"%(self.r_in, self.r_out))
         self.tau_dr_0 = self.tau_dr(rho_shielding)
         self.v_thermal = self.thermal_velocity(T)
        
@@ -101,7 +118,7 @@ class Qwind:
         #    return None
         
         self.reff_hist = [0] # for debugging
-        dr = (r_out - r_in) / (nr -1)
+        dr = (self.r_out - self.r_in) / (nr -1)
         self.lines_r_range = [r_in + (i-0.5) * dr for i in range(1,nr+1)]
         self.r_init = self.lines_r_range[0]
 
@@ -226,6 +243,17 @@ class Qwind:
         self.lines = []
 
         for i, r in enumerate(self.lines_r_range):
+            if ( r > self.radiation.sed_class.corona_radius):
+                if ( r < 2 * self.radiation.sed_class.corona_radius):
+                    v_z_0 = self.thermal_velocity(2e6) * const.c
+                    print("warm region")
+                    print(v_z_0)
+                else:
+                    v_z_0 = self.thermal_velocity(self.radiation.sed_class.disk_temperature4(r)**(1./4.)) * const.c
+                    print(v_z_0)
+            else:
+                print("streamline would be inside corona radius, ignoring.")
+                continue
             self.lines.append(self.line(r_0=r,v_z_0=v_z_0))
         i = 0
         if(self.n_cpus==1):
@@ -299,6 +327,6 @@ class Qwind:
 
 
 if __name__ == '__main__':
-    qwind = Qwind( n_cpus = 3)
-    qwind.start_lines(niter=10000)
-    qwind.save_results("Results_0.06")
+    qwind = Qwind( M = 1e9, mdot = 0.1, rho_shielding = 3e9,  n_cpus = 3)
+    qwind.start_lines(niter=50000)
+    qwind.save_results("Results_Nomura_1e9")
