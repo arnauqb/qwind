@@ -30,14 +30,15 @@ class Qwind:
     """
     def __init__(self, M = 2e8,
                 mdot = 0.5, 
-                spin=0.,eta=0.06, 
+                spin=0.,
+                eta=0.06, 
                 r_in = 200, 
                 r_out = 1600, 
                 r_min = 6., 
                 r_max=1400, 
-                T=2e6, 
+                T = 2e6, 
                 mu = 1, 
-                modes =[], 
+                modes = [], 
                 rho_shielding = 2e8, 
                 intsteps=1, 
                 nr=20, 
@@ -268,65 +269,35 @@ class Qwind:
 
         with Pool(self.n_cpus) as multiprocessing_pool:
             self.lines = multiprocessing_pool.starmap(evolve, zip(self.lines, niter_array))
+        self.mdot_w = self.compute_wind_mass_loss()
         return self.lines
 
-    def save_results(self, folder_name = "Results"):
+    def compute_wind_mass_loss(self):
         """
-        Saves results to filename.
+        Computes wind mass loss rate after evolving the streamlines.
         """
-        try:
-            os.mkdir(folder_name)
-        except:
-            answer = input("warning, folder exists, delete? (y/N)")
-            if (answer == 'y'):
-                shutil.rmtree(folder_name)
-                os.mkdir(folder_name)
-            else:
-                return 0
+        escaped_mask = []
+        for line in self.lines:
+            escaped_mask.append(line.escaped)
+        escaped_mask = np.array(escaped_mask, dtype = int)
+        wind_exists = False
+        lines_escaped = np.array(self.lines)[escaped_mask]
 
-        metadata_file = os.path.join(folder_name, "metadata.txt") 
-        with open(metadata_file, "w") as f:
-            f.write("M: \t %.2e\n"%self.M)
-            f.write("Mdot: \t %.2e\n"%self.mdot)
-            f.write("a: \t %.2e\n"%self.spin)
+        if(len(lines_escaped) == 0):
+            print("No wind escapes")
+            return 0 
 
-        for i, line in enumerate(self.lines):
-            line_name = "line_%02d"%i
-            position_file = os.path.join(folder_name, line_name + "_positions.csv")
-            radiation_file = os.path.join(folder_name, line_name + "_radiation.csv")
-            position_data = {
-               'R' : line.r_hist,
-               'P' : line.phi_hist,
-               'Z' : line.z_hist,
-               'X' : line.x_hist,
-               'V_R' : line.v_r_hist,
-               'V_PHI' : line.v_phi_hist,
-               'V_Z' : line.v_z_hist,
-               'V_T' : line.v_T_hist,
-               'a' : line.a_hist,
-            }
+        dR = self.lines_r_range[1] - self.lines_r_range[0]
+        mdot_w_total = 0
 
-            df_pos = pd.DataFrame.from_dict(position_data)
-            df_pos.to_csv(position_file, index = False)
+        for line in lines_escaped:
+            area = 2 * np.pi * ( (line.r_0 + dR)**2. - line.r_0**2) * self.Rg**2.
+            mdot_w = line.rho_0 * const.m_p * line.v_T_0 * const.c * area
+            mdot_w_total += mdot_w
 
-            radiation_data = {
-                'rho' : line.rho_hist,
-                'xi' : line.xi_hist,
-                'fm' : line.fm_hist,
-                'tau_dr' : line.tau_dr_hist,
-                'tau_uv' : line.tau_uv_hist,
-                'tau_x' : line.tau_x_hist,
-                'dv_dr' : line.dv_dr_hist,
-                'dr_e' : line.dr_e_hist,
-            }
-            df_rad = pd.DataFrame.from_dict(radiation_data)
-            df_rad.to_csv(radiation_file, index = False)
-
-        return 1
-
-
+        return mdot_w_total
 
 if __name__ == '__main__':
-    qwind = Qwind( M = 1e9, mdot = 0.1, rho_shielding = 3e9,  n_cpus = 3)
+    qwind = Qwind( M = 1e8, mdot = 0.1, rho_shielding = 2e8,  n_cpus = 4, nr = 4)
     qwind.start_lines(niter=50000)
-    qwind.save_results("Results_Nomura_1e9")
+    utils.save_results(qwind,"Results")

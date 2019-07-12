@@ -79,7 +79,7 @@ class streamline():
         self.v_z_0 = v_z_0 / const.c  
         self.v_z = self.v_z_0  
         self.v = [self.v_r, self.v_phi, self.v_z]
-        self.v_T = np.sqrt(self.v_z ** 2 + self.v_r ** 2)
+        self.v_T_0 = np.sqrt(self.v_z ** 2 + self.v_r ** 2)
         self.dv_dr = 0  
         self.dr_e = 0  
         self.escaped = False # this variable tracks whether the wind has reached the escape velocity
@@ -115,7 +115,7 @@ class streamline():
         self.v_phi_hist = [self.v_phi]
         self.v_z_hist = [self.v_z]
         self.v_hist = [self.v]
-        self.v_T_hist = [self.v_T]
+        self.v_T_hist = [self.v_T_0]
 
         # radiation related histories #
         self.rho_hist = [self.rho]

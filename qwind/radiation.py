@@ -3,7 +3,7 @@ This module handles the radiation transfer aspects of Qwind.
 """
 
 import numpy as np
-from qwind import aux_numba, integral
+from qwind import aux_numba
 import qwind.constants as const
 from scipy import optimize, integrate
 from pyagn import sed
