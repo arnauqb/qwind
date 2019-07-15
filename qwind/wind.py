@@ -90,8 +90,6 @@ class Qwind:
         self.mu = mu
         self.r_min = r_min 
         self.r_max = r_max 
-        self.r_in = r_in
-        self.r_out = r_out
         self.eta = eta
 
         
@@ -101,6 +99,9 @@ class Qwind:
         self.radiation = radiation.Radiation(self)
         self.r_in = 2. * self.radiation.sed_class.corona_radius
         self.r_out = self.radiation.sed_class.gravity_radius
+        if('old_boundaries' in self.modes):
+            self.r_in = r_in
+            self.r_out = r_out
         print("r_in: %f \n r_out: %f"%(self.r_in, self.r_out))
         self.tau_dr_0 = self.tau_dr(rho_shielding)
         self.v_thermal = self.thermal_velocity(T)
