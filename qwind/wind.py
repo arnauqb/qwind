@@ -185,11 +185,11 @@ class Qwind:
     
     def line(self,
             r_0=375.,
-            z_0=1., 
+            z_0=10., 
             rho_0=2e8,
             T=2e6,
             v_r_0=0.,
-            v_z_0=5e7,
+            v_z_0=1e7,
             dt=4.096 / 10.
             ):
         """
@@ -226,7 +226,7 @@ class Qwind:
             )
 
     
-    def start_lines(self, v_z_0 = 5e7, niter=5000):        
+    def start_lines(self, v_z_0 = 1e7, niter=5000):        
         """
         Starts and evolves a set of equally spaced streamlines.
         
@@ -244,7 +244,9 @@ class Qwind:
         self.lines = []
 
         for i, r in enumerate(self.lines_r_range):
-            if ( r > self.radiation.sed_class.corona_radius):
+            if ('custom_vel' in self.modes):
+                v_z_0 = v_z_0
+            elif ( r > self.radiation.sed_class.corona_radius):
                 if ( r < 2 * self.radiation.sed_class.corona_radius):
                     v_z_0 = self.thermal_velocity(2e6) * const.c
                     print("warm region")
@@ -281,7 +283,7 @@ class Qwind:
             escaped_mask.append(line.escaped)
         escaped_mask = np.array(escaped_mask, dtype = int)
         wind_exists = False
-        lines_escaped = np.array(self.lines)[escaped_mask]
+        lines_escaped = np.array(self.lines)[escaped_mask == True]
 
         if(len(lines_escaped) == 0):
             print("No wind escapes")

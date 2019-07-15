@@ -28,10 +28,10 @@ class streamline():
             radiation_class,
             parent,
             r_0=375.,
-            z_0=1.,
+            z_0=10.,
             rho_0=2e8,
             T=2e6,
-            v_z_0=5e7,
+            v_z_0=1e7,
             v_r_0=0.,
             dt = 4.096 / 10.
             ):

@@ -5,7 +5,7 @@ This module handles the radiation transfer aspects of Qwind.
 import numpy as np
 from qwind import aux_numba
 import qwind.constants as const
-from scipy import optimize, integrate
+from scipy import optimize, integrate, interpolate
 from pyagn import sed
 
 
@@ -26,6 +26,31 @@ class Radiation():
         self.r_x = self.ionization_radius()
         self.force_radiation_constant =  3. * self.wind.mdot / (8. * np.pi * self.wind.eta) * self.uv_fraction 
         self.int_hist = []
+
+        # interpolation values for force multiplier #
+        k_interp_xi_values = [ -4, -3, -2.26, -2.00, -1.50, -1.00,
+                 -0.42, 0.00, 0.22, 0.50, 1.0,
+                  1.5, 1.8, 2.0, 2.18, 2.39,
+                  2.76, 3.0, 3.29, 3.51, 3.68, 4.0]
+        k_interp_k_values = [ 0.411, 0.411, 0.400, 0.395, 0.363, 0.300,
+                   0.200, 0.132, 0.100, 0.068, 0.042,
+                   0.034, 0.033, 0.021, 0.013, 0.048,
+                   0.046, 0.042, 0.044, 0.045, 0.032,
+                   0.013]
+        etamax_interp_xi_values = [ -3, -2.5, -2.00, -1.50, -1.00,
+                 -0.5, -0.23, 0.0, 0.32, 0.50,
+                  1.0, 1.18,1.50, 1.68, 2.0,
+                  2.02, 2.16, 2.25, 2.39, 2.79,
+                  3.0, 3.32, 3.50, 3.75, 4.00 ]
+
+        etamax_interp_etamax_values = [ 6.95, 6.95, 6.98, 7.05, 7.26,
+                   7.56, 7.84, 8.00, 8.55, 8.95,
+                   8.47, 8.00, 6.84, 6.00, 4.32,
+                   4.00, 3.05, 2.74, 3.00, 3.10,
+                   2.73, 2.00, 1.58, 1.20, 0.78 ]   
+
+        self.k_interpolator = interpolate.interp1d(k_interp_xi_values, k_interp_k_values, fill_value="extrapolate") # important! xi is log here
+        self.log_etamax_interpolator = interpolate.interp1d(etamax_interp_xi_values, etamax_interp_etamax_values, fill_value="extrapolate") # important! xi is log here
 
     def compute_uv_and_xray_fraction(self):
         """
@@ -83,7 +108,7 @@ class Radiation():
             ionization parameter.
         """
         distance_2 = r**2. + z**2.
-        xi = self.xray_luminosity * np.exp(-tau_x) / ( rho_shielding * distance_2 * self.wind.Rg**2) / 8.2125
+        xi = self.xray_luminosity * np.exp(-tau_x) / ( rho_shielding * distance_2 * self.wind.Rg**2)# / 8.2125
         return xi
 
     def ionization_radius_kernel(self, rx):
@@ -164,7 +189,9 @@ class Radiation():
         Returns:
             Factor k in the force multiplier formula.
         """
-        return 0.03 + 0.385 * np.exp(-1.4 * xi**(0.6))
+        #return 0.03 + 0.385 * np.exp(-1.4 * xi**(0.6))
+        k = self.k_interpolator(np.log10(xi))
+        return k 
 
     def eta_max(self, xi):
         """
@@ -176,12 +203,15 @@ class Radiation():
         Returns:
             Factor eta_max in the force multiplier formula.
         """
-        if(np.log10(xi) < 0.5):
-            aux = 6.9 * np.exp(0.16 * xi**(0.4))
-            return 10**aux
-        else:
-            aux = 9.1 * np.exp(-7.96e-3 * xi)
-            return 10**aux
+        #if(np.log10(xi) < 0.5):
+        #    aux = 6.9 * np.exp(0.16 * xi**(0.4))
+        #    return 10**aux
+        #else:
+        #    aux = 9.1 * np.exp(-7.96e-3 * xi)
+        #    return 10**aux
+
+        eta_max = 10**(self.log_etamax_interpolator(np.log10(xi)))
+        return eta_max 
 
     def sobolev_optical_depth(self, tau_dr, dv_dr):
         """
@@ -210,7 +240,8 @@ class Radiation():
         Returns:
             fm : force multiplier.
         """
-        #xi = xi / 8.2125 # this factor converts xi to Xi, the other ionization parameter definition which differs by a factor of (4 pi Ryd c).
+        if ( xi > 1e4):
+            return 0
         k = self.k(xi)
         eta_max = self.eta_max(xi)
         tau_max = t * eta_max
