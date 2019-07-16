@@ -99,7 +99,7 @@ class Qwind:
         self.radiation = radiation.Radiation(self)
         self.r_in = 2. * self.radiation.sed_class.corona_radius
         self.r_out = self.radiation.sed_class.gravity_radius
-        if('old_boundaries' in self.modes):
+        if('old_boundaries' in self.modes or 'old' in self.modes):
             self.r_in = r_in
             self.r_out = r_out
         print("r_in: %f \n r_out: %f"%(self.r_in, self.r_out))
@@ -113,11 +113,7 @@ class Qwind:
         except BaseException:
             pass
 
-        #try:
         self.radiation = radiation.Radiation(self)
-        #except:
-        #    print("Radiation mode not found")
-        #    return None
         
         self.reff_hist = [0] # for debugging
         dr = (self.r_out - self.r_in) / (nr -1)
@@ -245,16 +241,13 @@ class Qwind:
         self.lines = []
 
         for i, r in enumerate(self.lines_r_range):
-            if ('custom_vel' in self.modes):
+            if ('custom_vel' in self.modes or 'old' in self.modes):
                 v_z_0 = v_z_0
             elif ( r > self.radiation.sed_class.corona_radius):
                 if ( r < 2 * self.radiation.sed_class.corona_radius):
                     v_z_0 = self.thermal_velocity(2e6) * const.c
-                    print("warm region")
-                    print(v_z_0)
                 else:
                     v_z_0 = self.thermal_velocity(self.radiation.sed_class.disk_temperature4(r)**(1./4.)) * const.c
-                    print(v_z_0)
             else:
                 print("streamline would be inside corona radius, ignoring.")
                 continue

@@ -17,11 +17,10 @@ class Radiation():
     def __init__(self, wind):
         self.wind = wind
         self.sed_class = sed.SED(M = wind.M / const.Ms, mdot = wind.mdot, astar = wind.spin)
-        distance = 3e26
-        self.sed_flux = self.sed_class.total_flux(distance)
-        self.sed_class.plot_total_flux(distance)
-        self.sed_energy_range = self.sed_class.energy_range
-        self.uv_fraction, self.xray_fraction = self.compute_uv_and_xray_fraction()
+        self.uv_fraction, self.xray_fraction = self.sed_class.uv_fraction, xray_fraction
+        if ('old' in self.wind.modes):
+            self.uv_fraction = 0.85
+            self.xray_fraction = 0.15
         self.xray_luminosity = self.wind.mdot * self.wind.eddington_luminosity * self.xray_fraction
         self.r_x = self.ionization_radius()
         self.force_radiation_constant =  3. * self.wind.mdot / (8. * np.pi * self.wind.eta) * self.uv_fraction 
@@ -51,27 +50,6 @@ class Radiation():
 
         self.k_interpolator = interpolate.interp1d(k_interp_xi_values, k_interp_k_values, fill_value="extrapolate") # important! xi is log here
         self.log_etamax_interpolator = interpolate.interp1d(etamax_interp_xi_values, etamax_interp_etamax_values, fill_value="extrapolate") # important! xi is log here
-
-    def compute_uv_and_xray_fraction(self):
-        """
-        Computes the UV to X-Ray ratio from the SED.
-        We consider X-Ray all the ionizing radiation above 0.1 keV,
-        and UV all radiation between 0.001 keV and 0.1 keV.
-        """
-        xray_mask = self.sed_energy_range > 0.1
-        uv_mask = (self.sed_energy_range > 0.001) & (self.sed_energy_range < 0.1)
-        xray_flux = self.sed_flux[xray_mask]
-        uv_flux = self.sed_flux[uv_mask]
-        xray_energy_range = self.sed_energy_range[xray_mask]
-        uv_energy_range = self.sed_energy_range[uv_mask]
-        xray_int_flux = integrate.trapz(x=xray_energy_range, y = xray_flux / xray_energy_range)
-        uv_int_flux = integrate.trapz(x=uv_energy_range, y = uv_flux / uv_energy_range)
-        total_flux = integrate.trapz(x=self.sed_energy_range, y = self.sed_flux / self.sed_energy_range)
-        uv_fraction = uv_int_flux / total_flux
-        xray_fraction = xray_int_flux / total_flux
-        print("xray fraction: %f \n uv_fraction: %f \n"%(xray_fraction, uv_fraction))
-        return uv_fraction, xray_fraction
-
 
     def optical_depth_uv(self, r, z, r_0, tau_dr, tau_dr_0):
         """
