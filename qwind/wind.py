@@ -98,11 +98,12 @@ class Qwind:
         self.rho_shielding = rho_shielding
         self.bol_luminosity = self.mdot * self.eddington_luminosity
         self.radiation = radiation.Radiation(self)
-        self.r_in = 2. * self.radiation.sed_class.corona_radius
-        self.r_out = self.radiation.sed_class.gravity_radius
-        if('old_boundaries' in self.modes or 'old' in self.modes):
-            self.r_in = r_in
-            self.r_out = r_out
+        self.r_in = r_in
+        self.r_out = r_out
+        if(self.r_in == "auto" or self.r_out == "auto"):
+            self.r_in = 2. * self.radiation.sed_class.corona_radius
+            self.r_out = self.radiation.sed_class.gravity_radius
+
         print("r_in: %f \n r_out: %f"%(self.r_in, self.r_out))
         self.tau_dr_0 = self.tau_dr(rho_shielding)
         self.v_thermal = self.thermal_velocity(T)
@@ -242,16 +243,17 @@ class Qwind:
         self.lines = []
 
         for i, r in enumerate(self.lines_r_range):
-            if ('custom_vel' in self.modes or 'old' in self.modes):
-                v_z_0 = v_z_0
-            elif ( r > self.radiation.sed_class.corona_radius):
-                if ( r < 2 * self.radiation.sed_class.corona_radius):
-                    v_z_0 = self.thermal_velocity(2e6) * const.c
+            if (v_z_0 == "auto"):
+                if ( r > self.radiation.sed_class.corona_radius):
+                    if ( r < 2 * self.radiation.sed_class.corona_radius):
+                        v_z_0 = self.thermal_velocity(2e6) * const.c
+                    else:
+                        v_z_0 = self.thermal_velocity(self.radiation.sed_class.disk_temperature4(r)**(1./4.)) * const.c
                 else:
-                    v_z_0 = self.thermal_velocity(self.radiation.sed_class.disk_temperature4(r)**(1./4.)) * const.c
+                    print("streamline would be inside corona radius, ignoring.")
+                    continue
             else:
-                print("streamline would be inside corona radius, ignoring.")
-                continue
+                v_z_0 = v_z_0
             self.lines.append(self.line(r_0=r,v_z_0=v_z_0))
         i = 0
         if(self.n_cpus==1):
