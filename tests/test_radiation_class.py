@@ -5,11 +5,67 @@ Tests the radiation class
 import numpy as np
 import pytest
 from numpy import testing
-from qwind import wind
+from qwind import wind, constants
 
-radiation = wind.Qwind().radiation
+radiation = wind.Qwind(
+        M = 2e8,
+        mdot = 0.5,
+        spin = 0.,
+        eta = 0.06,
+        r_in = 200,
+        r_out = 1600,
+        r_min = 6.,
+        r_max = 1400.,
+        T = 2e6,
+        mu = 1,
+        modes = [],
+        rho_shielding = 2e8,
+        intsteps = 1,
+        nr = 20,
+        save_dir = "tests",
+        radiation_mode = "Qwind",
+        n_cpus = 1,
+        ).radiation
 
+def test_initial_parameters():
+    testing.assert_almost_equal(radiation.wind.r_in, 17.803971, decimal = 6)
+    testing.assert_almost_equal(radiation.wind.r_out, 1354.415129, decimal = 6)
+    testing.assert_almost_equal(radiation.r_x, 314.04676114846177)
+    testing.assert_almost_equal(radiation.uv_fraction, 0.8374517023217566, decimal = 6)
+    testing.assert_almost_equal(radiation.xray_fraction, 0.13685519558495207, decimal = 6)
+    testing.assert_almost_equal(radiation.force_radiation_constant, 0.8330286, decimal = 6)
+    testing.assert_almost_equal(radiation.wind.eddington_luminosity, 2.51413032723893e46, decimal = 6)
+    testing.assert_almost_equal(radiation.xray_luminosity, 0.5 * radiation.xray_fraction * radiation.wind.eddington_luminosity, decimal = 6)
 
+def test_optical_depth_uv():
+    """
+    test uv optical depth.
+    """
+    tau_dr = 50
+    tau_dr_0 = 100
+    r_init = radiation.wind.r_init
+    tau_uv_check = 7500 + 100 * (250 - r_init) 
+    testing.assert_almost_equal(radiation.optical_depth_uv(400,0,250,tau_dr, tau_dr_0), tau_uv_check )
+    testing.assert_equal(radiation.optical_depth_uv(400,1,250, 0, 0), 0. )
+
+def test_ionization_parameter():
+
+    r = 100
+    z = 100
+    tau_x = 0
+    xi1 = radiation.xray_luminosity / 2e8 / (r**2 + z**2) / radiation.wind.Rg**2.
+    testing.assert_almost_equal(xi1, radiation.ionization_parameter(r, z, tau_x, radiation.wind.rho_shielding))
+    
+def test_critical_ionization_parameter():
+    """
+    Tests if we got the right ionization radius r_x.
+    """
+    testing.assert_equal(1e5, constants.ionization_parameter_critical)
+    testing.assert_almost_equal(radiation.ionization_radius_kernel(radiation.r_x),0.)
+
+def test_opacity_x_r():
+    testing.assert_equal(radiation.opacity_x_r(radiation.r_x + 10, 100)
+    testing.assert_equal(radiation.opacity_x_r(radiation.r_x - 10, 1)
 
 # fm tests #
 def test_force_multiplier_k():

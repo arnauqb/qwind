@@ -28,7 +28,8 @@ class Qwind:
     """
     A class used to represent the global properties of the wind, i.e, the accretion disc and black hole properties as well as attributes shared among streamlines.
     """
-    def __init__(self, M = 2e8,
+    def __init__(self, 
+                M = 2e8,
                 mdot = 0.5, 
                 spin=0.,
                 eta=0.06, 

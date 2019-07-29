@@ -65,11 +65,12 @@ class Radiation():
         Returns:
             UV optical depth at point (r,z) 
         """
-        tau_uv_0 = (r_0 - self.wind.r_init)
-        distance = np.sqrt(r**2 + z**2)
+        delta_r_0 = r_0 - self.wind.r_init
         delta_r = r - r_0
+        distance = np.sqrt(r**2 + z**2)
         sec_theta = distance / r
-        tau_uv = sec_theta *  ( tau_dr_0 * tau_uv_0  +  delta_r * tau_dr )
+        tau_uv = sec_theta *  ( delta_r_0 * tau_dr_0  +  delta_r * tau_dr )
+        assert tau_uv >= 0, "UV optical depth cannot be negative!"
         return tau_uv
     
     def ionization_parameter(self, r, z, tau_x, rho_shielding):
@@ -87,6 +88,7 @@ class Radiation():
         """
         distance_2 = r**2. + z**2.
         xi = self.xray_luminosity * np.exp(-tau_x) / ( rho_shielding * distance_2 * self.wind.Rg**2)# / 8.2125
+        assert xi >= 0, "Ionization parameter cannot be negative!"
         return xi
 
     def ionization_radius_kernel(self, rx):
@@ -116,6 +118,7 @@ class Radiation():
             else:
                 print("ionization radius is very large, atmosphere is completely ionized.")
                 r_x = self.wind.r_max
+        assert r_x > 0, "Got non physical ionization radius!"
         return r_x 
 
     def opacity_x_r(self, r):
@@ -155,6 +158,7 @@ class Radiation():
         sec_theta = distance / r
         delta_r = r - r_0
         tau_x = sec_theta * (tau_dr_0 * tau_x_0 + tau_dr * self.opacity_x_r(r) * delta_r)
+        assert tau_x >= 0, "X-Ray optical depth cannot be negative!"
         return tau_x
 
     def force_multiplier_k(self, xi):
