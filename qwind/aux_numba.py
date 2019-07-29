@@ -161,6 +161,7 @@ def integration_quad_z_rd(r_d, r, z):
     ff0 = (1. - np.sqrt(6./r_d)) / r_d**2.
     result = phi_int * ff0
     return result 
+
 @jit()
 def integration_quad(r, z, r_min, r_max):
     r_part = quad(integration_quad_r_rd, r_min, r_max, args = (r,z), points = [r])[0]

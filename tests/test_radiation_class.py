@@ -64,8 +64,33 @@ def test_critical_ionization_parameter():
     testing.assert_almost_equal(radiation.ionization_radius_kernel(radiation.r_x),0.)
 
 def test_opacity_x_r():
-    testing.assert_equal(radiation.opacity_x_r(radiation.r_x + 10, 100)
-    testing.assert_equal(radiation.opacity_x_r(radiation.r_x - 10, 1)
+    testing.assert_equal(radiation.opacity_x_r(radiation.r_x + 10), 100)
+    testing.assert_equal(radiation.opacity_x_r(radiation.r_x - 10), 1)
+
+def test_optical_depth_x():
+    tau_dr = 50
+    tau_dr_0 = 100
+    tau_x_1 = radiation.optical_depth_x(radiation.r_x, 0, radiation.r_x, tau_dr, tau_dr_0, 2e8)
+    tau_truth = tau_dr_0 * (radiation.r_x - radiation.wind.r_init)
+    testing.assert_almost_equal(tau_truth, tau_x_1)
+    tau_x_2 = radiation.optical_depth_x(200,10,100,0,0,2e8)
+    testing.assert_almost_equal(tau_x_2,0)
+
+def test_sobolev_optical_depth():
+    tau_dr = 20
+    v_th = radiation.wind.v_thermal
+    testing.assert_equal(radiation.sobolev_optical_depth(1, 1), v_th)
+    testing.assert_equal(radiation.sobolev_optical_depth(0, 100), 0)
+    testing.assert_equal(radiation.sobolev_optical_depth(tau_dr, 20), v_th)
+
+def test_force_radiation():
+    r_values = np.linspace(200,1000)
+    z_values = np.linspace(200,1000)
+    for r in r_values:
+        for z in z_values:
+            force = radiation.force_radiation(r, z, 1, 1)
+            assert force[0] >= 0, "Negative radial force!"
+            assert force[-1] >= 0, "Negative z force!"
 
 # fm tests #
 def test_force_multiplier_k():

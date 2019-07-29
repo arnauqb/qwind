@@ -209,6 +209,7 @@ class Radiation():
         """
         sobolev_length = self.wind.v_thermal / np.abs(dv_dr)
         sobolev_optical_depth = tau_dr * sobolev_length
+        assert sobolev_optical_depth >= 0, "Sobolev optical depth cannot be negative!"
         return sobolev_optical_depth
 
     def force_multiplier(self, t, xi):
