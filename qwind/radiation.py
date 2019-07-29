@@ -17,7 +17,7 @@ class Radiation():
     def __init__(self, wind):
         self.wind = wind
         self.sed_class = sed.SED(M = wind.M / const.Ms, mdot = wind.mdot, astar = wind.spin)
-        self.uv_fraction, self.xray_fraction = self.sed_class.uv_fraction, xray_fraction
+        self.uv_fraction, self.xray_fraction = self.sed_class.uv_fraction, self.sed_class.xray_fraction
         if ('old' in self.wind.modes):
             self.uv_fraction = 0.85
             self.xray_fraction = 0.15
@@ -157,7 +157,7 @@ class Radiation():
         tau_x = sec_theta * (tau_dr_0 * tau_x_0 + tau_dr * self.opacity_x_r(r) * delta_r)
         return tau_x
 
-    def k(self, xi):
+    def force_multiplier_k(self, xi):
         """
         Auxiliary function required for computing force multiplier.
 
@@ -171,7 +171,7 @@ class Radiation():
         k = self.k_interpolator(np.log10(xi))
         return k 
 
-    def eta_max(self, xi):
+    def force_multiplier_eta_max(self, xi):
         """
         Auxiliary function required for computing force multiplier.
         
@@ -218,13 +218,15 @@ class Radiation():
         Returns:
             fm : force multiplier.
         """
-        if ( xi > 1e4):
+        TAU_MAX_TOL = 0.001
+        XI_UPPER_LIM = 1e4
+        if ( xi > XI_UPPER_LIM):
             return 0
-        k = self.k(xi)
-        eta_max = self.eta_max(xi)
+        k = self.force_multiplier_k(xi)
+        eta_max = self.force_multiplier_eta_max(xi)
         tau_max = t * eta_max
         alpha = 0.6
-        if (tau_max < 0.001):
+        if (tau_max < TAU_MAX_TOL):
             aux = (1. - alpha) * (tau_max ** alpha)
         else:
             aux = ((1. + tau_max)**(1. - alpha) - 1.) / \
