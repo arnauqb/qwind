@@ -22,7 +22,7 @@ radiation = wind.Qwind(
         rho_shielding = 2e8,
         intsteps = 1,
         nr = 20,
-        save_dir = "tests",
+        save_dir = "results",
         radiation_mode = "Qwind",
         n_cpus = 1,
         ).radiation

@@ -118,7 +118,7 @@ class Qwind:
         
         self.reff_hist = [0] # for debugging
         dr = (self.r_out - self.r_in) / (nr -1)
-        self.lines_r_range = [r_in + (i-0.5) * dr for i in range(1,nr+1)]
+        self.lines_r_range = [self.r_in + (i-0.5) * dr for i in range(1,nr+1)]
         self.r_init = self.lines_r_range[0]
 
         self.nr = nr
