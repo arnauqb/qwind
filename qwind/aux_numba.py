@@ -62,27 +62,6 @@ def jit_integrand(integrand_function):
     return LowLevelCallable(cf(wrapped).ctypes)
 
 @jit(nopython=True)
-def _Distance_gas_disc(r_d, phi_d, r, z):
-    """
-    Distance between a disc element at (r_d, phi_d), and at a gas blob at (r,0,z).
-    Args:
-        r_d: disc element radial coordinate.
-        phi_d: disc element angular coordinate.
-        r: gas blob radial coordinate.
-        z: gas blob height coordinate.
-    Returns:
-        Distance between disc element and gas blob.
-    """
-    return np.sqrt(
-        r ** 2. +
-        r_d ** 2. +
-        z ** 2. -
-        2. *
-        r *
-        r_d *
-        np.cos(phi_d))
-
-@jit(nopython=True)
 def _qwind_integral_kernel(r_d, phi_d, r, z):
     """
     Kernel of the radiation force integral.
@@ -142,8 +121,20 @@ def integration_quad_r_phid(phi_d, r_d, r, z):
     result = aux1 / delta**2.
     return result 
 
+def integration_quad_r_phid_test(phi_d, r_d, r, z):
+    aux1 = (r - r_d * np.cos(phi_d))
+    delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
+    result = aux1 / delta**2.
+    return result 
+
+
 @jit_integrand
 def integration_quad_z_phid(phi_d, r_d, r, z):
+    delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
+    result = 1. / delta**2.
+    return result 
+
+def integration_quad_z_phid_test(phi_d, r_d, r, z):
     delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
     result = 1. / delta**2.
     return result 

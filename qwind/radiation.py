@@ -8,7 +8,6 @@ import qwind.constants as const
 from scipy import optimize, integrate, interpolate
 from pyagn import sed
 
-
 class Radiation():
     """
     This class handles all the calculations involving the radiation field, i.e., radiative opacities, optical depths, radiation force, etc.
@@ -18,7 +17,7 @@ class Radiation():
         self.wind = wind
         self.sed_class = sed.SED(M = wind.M / const.Ms, mdot = wind.mdot, astar = wind.spin)
         self.uv_fraction, self.xray_fraction = self.sed_class.uv_fraction, self.sed_class.xray_fraction
-        if ('old' in self.wind.modes):
+        if ('old_sed' in self.wind.modes):
             self.uv_fraction = 0.85
             self.xray_fraction = 0.15
         self.xray_luminosity = self.wind.mdot * self.wind.eddington_luminosity * self.xray_fraction
@@ -191,7 +190,6 @@ class Radiation():
         #else:
         #    aux = 9.1 * np.exp(-7.96e-3 * xi)
         #    return 10**aux
-
         eta_max = 10**(self.log_etamax_interpolator(np.log10(xi)))
         return eta_max 
 
@@ -237,6 +235,7 @@ class Radiation():
             aux = ((1. + tau_max)**(1. - alpha) - 1.) / \
                 ((tau_max) ** (1. - alpha))
         fm = k * t**(-alpha) * aux
+        assert fm >= 0, "Force multiplier cannot be negative!"
         return fm
 
     def force_radiation(self, r, z, fm, tau_uv):
@@ -264,4 +263,3 @@ class Radiation():
         abs_uv = np.exp(-tau_uv)
         force = ( 1 + fm ) * abs_uv * self.force_radiation_constant * np.asarray([i_aux[0], 0., i_aux[1]])
         return force
-

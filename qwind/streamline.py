@@ -26,7 +26,7 @@ class streamline():
     def __init__(
             self,
             radiation_class,
-            parent,
+            wind,
             r_0=375.,
             z_0=10.,
             rho_0=2e8,
@@ -47,9 +47,7 @@ class streamline():
             v_r_0 : Initial radial velocity in units of cm/s.
             dt : Timestep in units of Rg/c.
         """
-        
-    
-        self.wind = parent
+        self.wind = wind 
         self.radiation = radiation_class
         
         # black hole and disc variables #
@@ -134,8 +132,6 @@ class streamline():
         #force histories #
         self.a_hist = [self.a]
         
-
-    
     ###############
     ## streaming ##
     ###############
@@ -148,7 +144,8 @@ class streamline():
         Returns:
             rho: updated density at the current point.
         """
-        if(self.v_z < 3.33e-10):
+        V_Z_CRIT = 3.33e-10
+        if(self.v_z < V_Z_CRIT):
             self.rho_hist.append(self.rho)
             return self.rho
 
@@ -278,7 +275,6 @@ class streamline():
         self.update_positions()
         # update radiation field #
         self.update_radiation()
-
 
     def iterate(self, niter=5000):
         """
