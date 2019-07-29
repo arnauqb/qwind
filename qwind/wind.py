@@ -214,7 +214,7 @@ class Qwind:
         from qwind.streamline import streamline
         return streamline(
             self.radiation,
-            parent = self,
+            wind = self,
             r_0 = r_0,
             z_0 = z_0,
             rho_0 = rho_0,
