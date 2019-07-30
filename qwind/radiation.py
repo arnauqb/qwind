@@ -69,6 +69,7 @@ class Radiation():
         distance = np.sqrt(r**2 + z**2)
         sec_theta = distance / r
         tau_uv = sec_theta *  ( delta_r_0 * tau_dr_0  +  delta_r * tau_dr )
+        tau_uv = min(tau_uv, 50)
         assert tau_uv >= 0, "UV optical depth cannot be negative!"
         return tau_uv
     
@@ -87,7 +88,7 @@ class Radiation():
         """
         distance_2 = r**2. + z**2.
         xi = self.xray_luminosity * np.exp(-tau_x) / ( rho_shielding * distance_2 * self.wind.Rg**2)# / 8.2125
-        assert xi >= 0, "Ionization parameter cannot be negative!"
+        assert xi > 0, "Ionization parameter cannot be negative!"
         return xi
 
     def ionization_radius_kernel(self, rx):
@@ -157,6 +158,7 @@ class Radiation():
         sec_theta = distance / r
         delta_r = r - r_0
         tau_x = sec_theta * (tau_dr_0 * tau_x_0 + tau_dr * self.opacity_x_r(r) * delta_r)
+        tau_x = min(tau_x, 50)
         assert tau_x >= 0, "X-Ray optical depth cannot be negative!"
         return tau_x
 
@@ -170,8 +172,8 @@ class Radiation():
         Returns:
             Factor k in the force multiplier formula.
         """
-        #return 0.03 + 0.385 * np.exp(-1.4 * xi**(0.6))
-        k = self.k_interpolator(np.log10(xi))
+        k = 0.03 + 0.385 * np.exp(-1.4 * xi**(0.6))
+        #k = self.k_interpolator(np.log10(xi))
         return k 
 
     def force_multiplier_eta_max(self, xi):
@@ -184,13 +186,13 @@ class Radiation():
         Returns:
             Factor eta_max in the force multiplier formula.
         """
-        #if(np.log10(xi) < 0.5):
-        #    aux = 6.9 * np.exp(0.16 * xi**(0.4))
-        #    return 10**aux
-        #else:
-        #    aux = 9.1 * np.exp(-7.96e-3 * xi)
-        #    return 10**aux
-        eta_max = 10**(self.log_etamax_interpolator(np.log10(xi)))
+        if(np.log10(xi) < 0.5):
+            aux = 6.9 * np.exp(0.16 * xi**(0.4))
+            eta_max = 10**aux
+        else:
+            aux = 9.1 * np.exp(-7.96e-3 * xi)
+            eta_max = 10**aux
+        #eta_max = 10**(self.log_etamax_interpolator(np.log10(xi)))
         return eta_max 
 
     def sobolev_optical_depth(self, tau_dr, dv_dr):
@@ -260,6 +262,9 @@ class Radiation():
             i_aux = aux_numba.integration_quad(r, z, self.wind.r_min, self.wind.r_max)
 
         self.int_hist.append(i_aux)
+        assert i_aux[0] >= 0, "Negative radial radiation force!"
+        assert i_aux[1] >= 0, "Negative z radiation force!"
+
         abs_uv = np.exp(-tau_uv)
         force = ( 1 + fm ) * abs_uv * self.force_radiation_constant * np.asarray([i_aux[0], 0., i_aux[1]])
         return force

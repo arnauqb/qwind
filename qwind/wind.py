@@ -10,16 +10,6 @@ import pandas as pd
 from numba import jitclass, jit
 from qwind import aux_numba
 
-
-# check backend to import appropiate progress bar #
-def tqdm_dump(array):
-    return array
-backend = utils.type_of_script()
-if(backend == 'jupyter'):
-    from tqdm import tqdm_notebook as tqdm
-else:
-    tqdm = tqdm_dump
-
 def evolve(line, niter):
     line.iterate(niter=niter)
     return line
@@ -214,7 +204,7 @@ class Qwind:
         from qwind.streamline import streamline
         return streamline(
             self.radiation,
-            parent = self,
+            wind = self,
             r_0 = r_0,
             z_0 = z_0,
             rho_0 = rho_0,
@@ -261,6 +251,7 @@ class Qwind:
                i += 1
                print("Line %d of %d"%(i, len(self.lines)))
                line.iterate(niter=niter)
+            self.mdot_w = self.compute_wind_mass_loss()
             return self.lines
         print("multiple cpus")
         niter_array = niter * np.ones(len(self.lines))
