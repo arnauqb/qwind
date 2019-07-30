@@ -87,7 +87,8 @@ class Qwind:
         self.Rg = const.G * self.M / (const.c ** 2) # gravitational radius
         self.rho_shielding = rho_shielding
         self.bol_luminosity = self.mdot * self.eddington_luminosity
-        self.radiation = radiation.Radiation(self)
+        self.tau_dr_0 = self.tau_dr(rho_shielding)
+        self.v_thermal = self.thermal_velocity(T)
         self.r_in = r_in
         self.r_out = r_out
         if(self.r_in == "auto" or self.r_out == "auto"):
@@ -95,8 +96,6 @@ class Qwind:
             self.r_out = self.radiation.sed_class.gravity_radius
 
         print("r_in: %f \n r_out: %f"%(self.r_in, self.r_out))
-        self.tau_dr_0 = self.tau_dr(rho_shielding)
-        self.v_thermal = self.thermal_velocity(T)
        
         # create directory if it doesnt exist. Warning, this overwrites previous outputs.
         self.save_dir = save_dir
@@ -105,12 +104,14 @@ class Qwind:
         except BaseException:
             pass
 
-        self.radiation = radiation.Radiation(self)
         
         self.reff_hist = [0] # for debugging
         dr = (self.r_out - self.r_in) / (nr -1)
         self.lines_r_range = [self.r_in + (i-0.5) * dr for i in range(1,nr+1)]
+        self.dr = self.lines_r_range[1] - self.lines_r_range[0]
         self.r_init = self.lines_r_range[0]
+
+        self.radiation = radiation.Radiation(self)
 
         self.nr = nr
         self.lines = [] # list of streamline objects
