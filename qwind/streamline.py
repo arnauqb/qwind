@@ -15,8 +15,7 @@ backend = utils.type_of_script()
 if(backend == 'jupyter'):
     from tqdm import tqdm_notebook as tqdm
 else:
-    from tqdm import tqdm
-    #tqdm = tqdm_dump
+    tqdm = tqdm_dump
 
 class streamline():
     """
