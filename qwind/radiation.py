@@ -8,7 +8,6 @@ import qwind.constants as const
 from scipy import optimize, integrate, interpolate
 from pyagn import sed
 
-
 class Radiation():
     """
     This class handles all the calculations involving the radiation field, i.e., radiative opacities, optical depths, radiation force, etc.
@@ -17,11 +16,10 @@ class Radiation():
     def __init__(self, wind):
         self.wind = wind
         self.sed_class = sed.SED(M = wind.M / const.Ms, mdot = wind.mdot, astar = wind.spin)
-        distance = 3e26
-        self.sed_flux = self.sed_class.total_flux(distance)
-        self.sed_class.plot_total_flux(distance)
-        self.sed_energy_range = self.sed_class.energy_range
-        self.uv_fraction, self.xray_fraction = self.compute_uv_and_xray_fraction()
+        self.uv_fraction, self.xray_fraction = self.sed_class.uv_fraction, self.sed_class.xray_fraction
+        if ('old_sed' in self.wind.modes):
+            self.uv_fraction = 0.85
+            self.xray_fraction = 0.15
         self.xray_luminosity = self.wind.mdot * self.wind.eddington_luminosity * self.xray_fraction
         self.r_x = self.ionization_radius()
         self.force_radiation_constant =  3. * self.wind.mdot / (8. * np.pi * self.wind.eta) * self.uv_fraction 
@@ -52,27 +50,6 @@ class Radiation():
         self.k_interpolator = interpolate.interp1d(k_interp_xi_values, k_interp_k_values, fill_value="extrapolate") # important! xi is log here
         self.log_etamax_interpolator = interpolate.interp1d(etamax_interp_xi_values, etamax_interp_etamax_values, fill_value="extrapolate") # important! xi is log here
 
-    def compute_uv_and_xray_fraction(self):
-        """
-        Computes the UV to X-Ray ratio from the SED.
-        We consider X-Ray all the ionizing radiation above 0.1 keV,
-        and UV all radiation between 0.001 keV and 0.1 keV.
-        """
-        xray_mask = self.sed_energy_range > 0.1
-        uv_mask = (self.sed_energy_range > 0.001) & (self.sed_energy_range < 0.1)
-        xray_flux = self.sed_flux[xray_mask]
-        uv_flux = self.sed_flux[uv_mask]
-        xray_energy_range = self.sed_energy_range[xray_mask]
-        uv_energy_range = self.sed_energy_range[uv_mask]
-        xray_int_flux = integrate.trapz(x=xray_energy_range, y = xray_flux / xray_energy_range)
-        uv_int_flux = integrate.trapz(x=uv_energy_range, y = uv_flux / uv_energy_range)
-        total_flux = integrate.trapz(x=self.sed_energy_range, y = self.sed_flux / self.sed_energy_range)
-        uv_fraction = uv_int_flux / total_flux
-        xray_fraction = xray_int_flux / total_flux
-        print("xray fraction: %f \n uv_fraction: %f \n"%(xray_fraction, uv_fraction))
-        return uv_fraction, xray_fraction
-
-
     def optical_depth_uv(self, r, z, r_0, tau_dr, tau_dr_0):
         """
         UV optical depth.
@@ -87,11 +64,12 @@ class Radiation():
         Returns:
             UV optical depth at point (r,z) 
         """
-        tau_uv_0 = (r_0 - self.wind.r_init)
-        distance = np.sqrt(r**2 + z**2)
+        delta_r_0 = r_0 - self.wind.r_init
         delta_r = r - r_0
+        distance = np.sqrt(r**2 + z**2)
         sec_theta = distance / r
-        tau_uv = sec_theta *  ( tau_dr_0 * tau_uv_0  +  delta_r * tau_dr )
+        tau_uv = sec_theta *  ( delta_r_0 * tau_dr_0  +  delta_r * tau_dr )
+        assert tau_uv >= 0, "UV optical depth cannot be negative!"
         return tau_uv
     
     def ionization_parameter(self, r, z, tau_x, rho_shielding):
@@ -109,6 +87,7 @@ class Radiation():
         """
         distance_2 = r**2. + z**2.
         xi = self.xray_luminosity * np.exp(-tau_x) / ( rho_shielding * distance_2 * self.wind.Rg**2)# / 8.2125
+        assert xi >= 0, "Ionization parameter cannot be negative!"
         return xi
 
     def ionization_radius_kernel(self, rx):
@@ -138,6 +117,7 @@ class Radiation():
             else:
                 print("ionization radius is very large, atmosphere is completely ionized.")
                 r_x = self.wind.r_max
+        assert r_x > 0, "Got non physical ionization radius!"
         return r_x 
 
     def opacity_x_r(self, r):
@@ -177,9 +157,10 @@ class Radiation():
         sec_theta = distance / r
         delta_r = r - r_0
         tau_x = sec_theta * (tau_dr_0 * tau_x_0 + tau_dr * self.opacity_x_r(r) * delta_r)
+        assert tau_x >= 0, "X-Ray optical depth cannot be negative!"
         return tau_x
 
-    def k(self, xi):
+    def force_multiplier_k(self, xi):
         """
         Auxiliary function required for computing force multiplier.
 
@@ -193,7 +174,7 @@ class Radiation():
         k = self.k_interpolator(np.log10(xi))
         return k 
 
-    def eta_max(self, xi):
+    def force_multiplier_eta_max(self, xi):
         """
         Auxiliary function required for computing force multiplier.
         
@@ -209,7 +190,6 @@ class Radiation():
         #else:
         #    aux = 9.1 * np.exp(-7.96e-3 * xi)
         #    return 10**aux
-
         eta_max = 10**(self.log_etamax_interpolator(np.log10(xi)))
         return eta_max 
 
@@ -227,6 +207,7 @@ class Radiation():
         """
         sobolev_length = self.wind.v_thermal / np.abs(dv_dr)
         sobolev_optical_depth = tau_dr * sobolev_length
+        assert sobolev_optical_depth >= 0, "Sobolev optical depth cannot be negative!"
         return sobolev_optical_depth
 
     def force_multiplier(self, t, xi):
@@ -240,18 +221,21 @@ class Radiation():
         Returns:
             fm : force multiplier.
         """
-        if ( xi > 1e4):
+        TAU_MAX_TOL = 0.001
+        XI_UPPER_LIM = 1e4
+        if ( xi > XI_UPPER_LIM):
             return 0
-        k = self.k(xi)
-        eta_max = self.eta_max(xi)
+        k = self.force_multiplier_k(xi)
+        eta_max = self.force_multiplier_eta_max(xi)
         tau_max = t * eta_max
         alpha = 0.6
-        if (tau_max < 0.001):
+        if (tau_max < TAU_MAX_TOL):
             aux = (1. - alpha) * (tau_max ** alpha)
         else:
             aux = ((1. + tau_max)**(1. - alpha) - 1.) / \
                 ((tau_max) ** (1. - alpha))
         fm = k * t**(-alpha) * aux
+        assert fm >= 0, "Force multiplier cannot be negative!"
         return fm
 
     def force_radiation(self, r, z, fm, tau_uv):
@@ -279,4 +263,3 @@ class Radiation():
         abs_uv = np.exp(-tau_uv)
         force = ( 1 + fm ) * abs_uv * self.force_radiation_constant * np.asarray([i_aux[0], 0., i_aux[1]])
         return force
-
