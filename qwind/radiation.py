@@ -101,7 +101,9 @@ class Radiation():
         Returns:
             difference between current ion. parameter and target one.
         """
-        ionization_difference = const.ionization_parameter_critical - self.ionization_parameter(rx, 0, 0, self.wind.rho_shielding)
+        tau_x = self.wind.tau_dr_0 * ( rx - self.wind.r_init - self.wind.dr) 
+        xi = self.ionization_parameter(rx, 0, tau_x, self.wind.rho_shielding)
+        ionization_difference = const.ionization_parameter_critical - xi
         return ionization_difference
 
     def ionization_radius(self):
@@ -109,7 +111,7 @@ class Radiation():
         Computes the disc radius at which xi = xi_0 using the bisect method.
         """
         try:
-            r_x = optimize.bisect(self.ionization_radius_kernel, self.wind.r_min, self.wind.r_max)
+            r_x = optimize.bisect(self.ionization_radius_kernel, self.wind.r_in, self.wind.r_out)
         except:
             print("ionization radius outside the disc.")
             if(self.ionization_radius_kernel(self.wind.r_min) > 0):
@@ -223,10 +225,10 @@ class Radiation():
         Returns:
             fm : force multiplier.
         """
+        #XI_UPPER_LIM = 1e4
+        #if ( xi > XI_UPPER_LIM):
+        #    return 0
         TAU_MAX_TOL = 0.001
-        XI_UPPER_LIM = 1e4
-        if ( xi > XI_UPPER_LIM):
-            return 0
         k = self.force_multiplier_k(xi)
         eta_max = self.force_multiplier_eta_max(xi)
         tau_max = t * eta_max
@@ -262,8 +264,14 @@ class Radiation():
             i_aux = aux_numba.integration_quad(r, z, self.wind.r_min, self.wind.r_max)
 
         self.int_hist.append(i_aux)
-        assert i_aux[0] >= 0, "Negative radial radiation force!"
-        assert i_aux[1] >= 0, "Negative z radiation force!"
+        try:
+            assert i_aux[0] >= 0
+            assert i_aux[1] >= 0
+        except:
+            if ('old_integral' in self.wind.modes):
+                pass
+            else:
+                raise "Negative radiation force!"
 
         abs_uv = np.exp(-tau_uv)
         force = ( 1 + fm ) * abs_uv * self.force_radiation_constant * np.asarray([i_aux[0], 0., i_aux[1]])
