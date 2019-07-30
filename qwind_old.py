@@ -5,7 +5,6 @@ from astropy import units as u
 import scipy.constants as const
 import scipy.integrate
 import scipy.optimize
-from joblib import Parallel, delayed
 import time
 from multiprocessing import Process, Value, Pool
 #from profilehooks import profile
