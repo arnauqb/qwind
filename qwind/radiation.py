@@ -64,8 +64,8 @@ class Radiation():
         Returns:
             UV optical depth at point (r,z) 
         """
-        delta_r_0 = r_0 - self.wind.r_init
-        delta_r = r - r_0
+        delta_r_0 = abs(r_0 - self.wind.r_init)
+        delta_r = abs(r - r_0)
         distance = np.sqrt(r**2 + z**2)
         sec_theta = distance / r
         tau_uv = sec_theta *  ( delta_r_0 * tau_dr_0  +  delta_r * tau_dr )
@@ -153,12 +153,12 @@ class Radiation():
         Returns:
             X-Ray optical depth at the point (r,z)
         """
-        tau_x_0 = (self.r_x - self.wind.r_init) 
+        tau_x_0 = self.r_x - self.wind.r_init
         if ( self.r_x < r_0):
             tau_x_0 += 100 * ( r_0 - self.r_x)
         distance = np.sqrt(r ** 2 + z ** 2)
         sec_theta = distance / r
-        delta_r = r - r_0
+        delta_r = abs(r - r_0)
         tau_x = sec_theta * (tau_dr_0 * tau_x_0 + tau_dr * self.opacity_x_r(r) * delta_r)
         tau_x = min(tau_x, 50)
         assert tau_x >= 0, "X-Ray optical depth cannot be negative!"
@@ -176,6 +176,7 @@ class Radiation():
         """
         k = 0.03 + 0.385 * np.exp(-1.4 * xi**(0.6))
         #k = self.k_interpolator(np.log10(xi))
+        assert k >= 0, "k cannot be negative!"
         return k 
 
     def force_multiplier_eta_max(self, xi):
@@ -195,6 +196,7 @@ class Radiation():
             aux = 9.1 * np.exp(-7.96e-3 * xi)
             eta_max = 10**aux
         #eta_max = 10**(self.log_etamax_interpolator(np.log10(xi)))
+        assert eta_max >= 0, "Eta Max cannot be negative!"
         return eta_max 
 
     def sobolev_optical_depth(self, tau_dr, dv_dr):

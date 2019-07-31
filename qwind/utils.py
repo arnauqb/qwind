@@ -21,13 +21,9 @@ def save_results(wind, folder_name = "Results"):
     try:
         os.mkdir(folder_name)
     except:
-        answer = input("warning, folder exists, delete? (y/N)")
-        if (answer == 'y'):
-            shutil.rmtree(folder_name)
-            os.mkdir(folder_name)
-        else:
-            return 0
-
+        shutil.rmtree(folder_name)
+        os.mkdir(folder_name)
+        
     metadata_file = os.path.join(folder_name, "metadata.txt") 
     with open(metadata_file, "w") as f:
         f.write("M: \t %.2e\n"%wind.M)
@@ -47,14 +43,14 @@ def save_results(wind, folder_name = "Results"):
            'V_Z' : line.v_z_hist,
            'V_T' : line.v_T_hist,
            'a' : line.a_hist,
-            'rho' : line.rho_hist,
-            'xi' : line.xi_hist,
-            'fm' : line.fm_hist,
-            'tau_dr' : line.tau_dr_hist,
-            'tau_uv' : line.tau_uv_hist,
-            'tau_x' : line.tau_x_hist,
-            'dv_dr' : line.dv_dr_hist,
-            'dr_e' : line.dr_e_hist,
+           'rho' : line.rho_hist,
+           'xi' : line.xi_hist,
+           'fm' : line.fm_hist,
+           'tau_dr' : line.tau_dr_hist,
+           'tau_uv' : line.tau_uv_hist,
+           'tau_x' : line.tau_x_hist,
+           'dv_dr' : line.dv_dr_hist,
+           'dr_e' : line.dr_e_hist,
         }
         df = pd.DataFrame.from_dict(data)
         df.to_csv(lines_file, index = False)
