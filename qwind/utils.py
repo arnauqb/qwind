@@ -3,6 +3,7 @@ import shutil
 import os
 import pandas as pd
 import pickle
+import numpy as np
 
 def type_of_script():
     try:
@@ -51,6 +52,8 @@ def save_results(wind, folder_name = "Results"):
            'tau_x' : line.tau_x_hist,
            'dv_dr' : line.dv_dr_hist,
            'dr_e' : line.dr_e_hist,
+#           'escaped' : line.escaped * np.ones(len(line.rho_hist)),
+           #'V_esc': line.v_esc_hist,
         }
         df = pd.DataFrame.from_dict(data)
         df.to_csv(lines_file, index = False)
