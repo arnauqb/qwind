@@ -286,6 +286,8 @@ class streamline():
         """
         for it in tqdm(range(0, niter)):
             self.step()
+            v_esc = self.wind.v_esc(self.d)
+            self.v_esc_hist.append(v_esc)
             # record number of iterations #
             self.it = it
             self.iter.append(it)
@@ -300,8 +302,6 @@ class streamline():
                 break
             
             # record when streamline escapes #
-            v_esc = self.wind.v_esc(self.d)
-            self.v_esc_hist.append(v_esc)
             if( (self.v_T > v_esc) and (not self.escaped)):
                 self.escaped = True
                 print("escape velocity reached.")
