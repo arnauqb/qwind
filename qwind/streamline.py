@@ -77,6 +77,8 @@ class streamline():
         self.v_z = self.v_z_0  
         self.v = [self.v_r, self.v_phi, self.v_z]
         self.v_T_0 = np.sqrt(self.v_z ** 2 + self.v_r ** 2)
+        self.v_esc = self.wind.v_esc(self.d)
+        self.v_esc_hist = [self.v_esc]
         self.dv_dr = 0  
         self.dr_e = 0  
         self.escaped = False # this variable tracks whether the wind has reached the escape velocity
@@ -284,6 +286,8 @@ class streamline():
         """
         for it in tqdm(range(0, niter)):
             self.step()
+            v_esc = self.wind.v_esc(self.d)
+            self.v_esc_hist.append(v_esc)
             # record number of iterations #
             self.it = it
             self.iter.append(it)
@@ -298,7 +302,7 @@ class streamline():
                 break
             
             # record when streamline escapes #
-            if(self.v_T > self.wind.v_esc(self.d) and (not self.escaped)):
+            if( (self.v_T > v_esc) and (not self.escaped)):
                 self.escaped = True
                 print("escape velocity reached.")
             a_t = np.sqrt(self.a[0]**2 + self.a[2]**2)

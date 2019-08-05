@@ -26,7 +26,7 @@ class Qwind:
                 r_in = 200, 
                 r_out = 1600, 
                 r_min = 6., 
-                r_max=1400, 
+                r_max = 1400, 
                 T = 2e6, 
                 mu = 1, 
                 modes = [], 
@@ -282,7 +282,7 @@ class Qwind:
         mdot_w_total = 0
 
         for line in lines_escaped:
-            area = 2 * np.pi * ( (line.r_0 + dR)**2. - line.r_0**2) * self.Rg**2.
+            area = 2 * np.pi * ( (line.r_0 + dR/2.)**2. - (line.r_0 - dR/2.)**2) * self.Rg**2.
             mdot_w = line.rho_0 * const.m_p * line.v_T_0 * const.c * area
             mdot_w_total += mdot_w
 
