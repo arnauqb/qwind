@@ -10,12 +10,14 @@ from numba import jitclass, jit, int32, float32, cfunc
 from numba.types import intc, CPointer, float64
 from scipy import LowLevelCallable
 from scipy.integrate import quad
+from qwind import compiled_functions
 
 ## aux variables for integration  ##
 phids = np.linspace(0, np.pi, 100 + 1)
 deltaphids = np.asarray([phids[i + 1] - phids[i] for i in range(0, len(phids) - 1)])
 rds = np.geomspace(6, 1400, 250 + 1)
 deltards = np.asarray([rds[i + 1] - rds[i] for i in range(0, len(rds) - 1)])
+
 
 def jit_integrand(integrand_function):
 
@@ -61,6 +63,7 @@ def jit_integrand(integrand_function):
 
     return LowLevelCallable(cf(wrapped).ctypes)
 
+
 @jit(nopython=True)
 def _qwind_integral_kernel(r_d, phi_d, r, z):
     """
@@ -77,9 +80,9 @@ def _qwind_integral_kernel(r_d, phi_d, r, z):
         array[1]: kernel for the z integration.
     """
     delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
-    cos_gamma = (r - r_d * np.cos(phi_d)) 
+    cos_gamma = (r - r_d * np.cos(phi_d))
     ff = 1. / delta ** 2.
-    return [ff * cos_gamma, ff ]
+    return [ff * cos_gamma, ff]
 
 
 @jit(nopython=True)
@@ -97,7 +100,7 @@ def qwind_integration(r, z):
     """
     integral = [0., 0.]
     for i in range(0, len(deltards)):
-        int_step = [0., 0.,]
+        int_step = [0., 0., ]
         deltar = deltards[i]
         r_d = rds[i]
         ff0 = (1. - np.sqrt(6. / r_d)) / r_d ** 2.
@@ -113,53 +116,80 @@ def qwind_integration(r, z):
     integral[1] = 2. * z**2. * integral[1]
     return integral
 
-#@jit(nopython = True)
+# @jit(nopython = True)
 @jit_integrand
 def integration_quad_r_phid(phi_d, r_d, r, z):
     aux1 = (r - r_d * np.cos(phi_d))
     delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
     result = aux1 / delta**2.
-    return result 
+    return result
+
 
 def integration_quad_r_phid_test(phi_d, r_d, r, z):
     aux1 = (r - r_d * np.cos(phi_d))
     delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
     result = aux1 / delta**2.
-    return result 
+    return result
 
 
 @jit_integrand
 def integration_quad_z_phid(phi_d, r_d, r, z):
     delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
     result = 1. / delta**2.
-    return result 
+    return result
+
 
 def integration_quad_z_phid_test(phi_d, r_d, r, z):
     delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
     result = 1. / delta**2.
-    return result 
+    return result
 
-@jit()
-def integration_quad_r_rd(r_d, r, z):
-    phi_int = quad(integration_quad_r_phid, 0., np.pi, args = (r_d, r, z))[0]
+
+def integration_quad_r_rd(r_d, r, z, uv_fraction_interpolator):
+    phi_int = quad(integration_quad_r_phid, 0., np.pi, args=(r_d, r, z))[0]
+    uv_fraction = uv_fraction_interpolator(r_d)
     ff0 = (1. - np.sqrt(6./r_d)) / r_d**2.
-    result = ff0 * phi_int
-    return result 
+    result = ff0 * phi_int * uv_fraction
+    return result
 
-@jit()
-def integration_quad_z_rd(r_d, r, z):
-    phi_int = quad(integration_quad_z_phid, 0., np.pi, args = (r_d, r, z))[0]
+
+def integration_quad_z_rd(r_d, r, z, uv_fraction_interpolator):
+    phi_int = quad(integration_quad_z_phid, 0., np.pi, args=(r_d, r, z))[0]
+    uv_fraction = uv_fraction_interpolator(r_d)
     ff0 = (1. - np.sqrt(6./r_d)) / r_d**2.
-    result = phi_int * ff0
-    return result 
+    result = ff0 * phi_int * uv_fraction
+    return result
 
-@jit()
-def integration_quad(r, z, r_min, r_max):
-    r_part = quad(integration_quad_r_rd, r_min, r_max, args = (r,z), points = [r])[0]
-    z_part = quad(integration_quad_z_rd, r_min, r_max, args = (r,z), points = [r])[0]
+
+def integration_quad(r, z, r_min, r_max, uv_fraction_interpolator):
+    r_part = quad(integration_quad_r_rd, r_min, r_max, args=(r, z, uv_fraction_interpolator), points=[r])[0]
+    z_part = quad(integration_quad_z_rd, r_min, r_max, args=(r, z, uv_fraction_interpolator), points=[r])[0]
     r_part = 2. * z * r_part
     z_part = 2. * z**2 * z_part
     return [r_part, z_part]
+
+
+def integration_quad_r_rd_nointerp(r_d, r, z):
+    phi_int = quad(integration_quad_r_phid, 0., np.pi, args=(r_d, r, z))[0]
+    ff0 = (1. - np.sqrt(6./r_d)) / r_d**2.
+    result = ff0 * phi_int
+    return result
+
+
+def integration_quad_z_rd_nointerp(r_d, r, z):
+    phi_int = quad(integration_quad_z_phid, 0., np.pi, args=(r_d, r, z))[0]
+    ff0 = (1. - np.sqrt(6./r_d)) / r_d**2.
+    result = ff0 * phi_int
+    return result
+
+
+def integration_quad_nointerp(r, z, r_min, r_max):
+    r_part = quad(integration_quad_r_rd_nointerp, r_min, r_max, args=(r, z), points=[r])[0]
+    z_part = quad(integration_quad_z_rd_nointerp, r_min, r_max, args=(r, z), points=[r])[0]
+    r_part = 2. * z * r_part
+    z_part = 2. * z**2 * z_part
+    return [r_part, z_part]
+
 
 ####
 
@@ -171,17 +201,19 @@ def _integrate_dblquad_kernel_r(r_d, phi_d, r, z):
     ff = ff0 * cos_gamma
     return ff
 
+
 @jit_integrand
 def _integrate_dblquad_kernel_z(r_d, phi_d, r, z):
     ff0 = (1. - np.sqrt(6. / r_d)) / r_d ** 2.
     delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
-    ff = ff0 * 1./ delta**2. 
+    ff = ff0 * 1. / delta**2.
     return ff
+
 
 @jit()
 def qwind_integration_dblquad(r, z, Rmin, Rmax):
-    r_int, r_error = scipy.integrate.dblquad(_integrate_dblquad_kernel_r, 0+0.001, np.pi-0.001, Rmin, Rmax, args=(r,z))
-    z_int, z_error  = scipy.integrate.dblquad(_integrate_dblquad_kernel_z, 0+0.001, np.pi-0.001, Rmin, Rmax, args=(r,z))
+    r_int, r_error = scipy.integrate.dblquad(_integrate_dblquad_kernel_r, 0 + 0.001, np.pi - 0.001, Rmin, Rmax, args=(r, z))
+    z_int, z_error = scipy.integrate.dblquad(_integrate_dblquad_kernel_z, 0 + 0.001, np.pi - 0.001, Rmin, Rmax, args=(r, z))
     r_int = 2. * z * r_int
     z_int = 2. * z**2 * z_int
     return [r_int, z_int, r_error, z_error]
