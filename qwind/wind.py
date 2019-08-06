@@ -1,14 +1,14 @@
-import numpy as np
-import qwind.constants as const
-from qwind import radiation
-from scipy import interpolate
-from multiprocessing import Pool
-from qwind import utils
 import os
 import shutil
+from multiprocessing import Pool
+
+import numpy as np
 import pandas as pd
-from numba import jitclass, jit
-from qwind import aux_numba
+from numba import jit, jitclass
+from scipy import interpolate
+
+import qwind.constants as const
+from qwind import aux_numba, radiation, utils
 
 
 def evolve(line, niter):
@@ -92,9 +92,9 @@ class Qwind:
         self.bol_luminosity = self.mdot * self.eddington_luminosity
         self.tau_dr_0 = self.tau_dr(rho_shielding)
         self.v_thermal = self.thermal_velocity(T)
-        radiation_attr = getattr(radiation, radiation_mode)
         self.r_in = r_in
         self.r_out = r_out
+        radiation_attr = getattr(radiation, radiation_mode)
         self.radiation = radiation_attr(self)
         
         print("r_in: %f \n r_out: %f" % (self.r_in, self.r_out))

@@ -3,10 +3,12 @@ This module handles the radiation transfer aspects of Qwind.
 """
 
 import numpy as np
-from qwind import aux_numba
+from scipy import integrate, interpolate, optimize
+
 import qwind.constants as const
-from scipy import optimize, integrate, interpolate
 from pyagn import sed
+from qwind import aux_numba
+from qwind.compiled_functions import *
 
 
 class SimpleSed:
@@ -311,18 +313,25 @@ class QSOSED:
         self.r_out = self.sed_class.gravity_radius
         self.wind.r_out = self.r_out
         self.dr = (self.r_out - self.r_in) / (self.wind.nr - 1)
+        self.r_init = self.r_in + 0.5 * self.dr
+        self.wind.r_init = self.r_in + 0.5 * self.dr
         self.uv_fraction, self.xray_fraction = self.sed_class.uv_fraction, self.sed_class.xray_fraction
         self.uv_fraction_list = self.sed_class.compute_uv_fractions(
             1e26, include_corona=True)
-        r_range_interp = np.linspace(
+        self.r_range_interp = np.linspace(
             self.sed_class.corona_radius, self.sed_class.gravity_radius, len(self.uv_fraction_list))
         self.xray_luminosity = self.wind.mdot * \
             self.wind.eddington_luminosity * self.xray_fraction
         self.r_x = self.ionization_radius()
         self.force_radiation_constant = 3. * \
             self.wind.mdot / (8. * np.pi * self.wind.eta)
+        aux_numba.r_range_interp = self.r_range_interp
+        aux_numba.fraction_uv_list = self.uv_fraction_list
+        #self.uv_fraction_interpolator = lambda r: interpolate_point_grid_1d(
+        #    r, np.array(self.uv_fraction_list)[::5], self.r_range_interp[::5], 0)
         self.uv_fraction_interpolator = interpolate.interp1d(
-            x=r_range_interp, y=self.uv_fraction_list, bounds_error=False, fill_value=0)
+            x=self.r_range_interp, y=self.uv_fraction_list,
+            bounds_error=False, fill_value=0, kind='cubic')
         self.int_hist = []
 
         # interpolation values for force multiplier #
@@ -365,7 +374,7 @@ class QSOSED:
         Returns:
             UV optical depth at point (r,z) 
         """
-        delta_r_0 = abs(r_0 - self.r_in)
+        delta_r_0 = abs(r_0 - self.r_init)
         delta_r = abs(r - r_0)
         distance = np.sqrt(r**2 + z**2)
         sec_theta = distance / r
@@ -404,7 +413,7 @@ class QSOSED:
         Returns:
             difference between current ion. parameter and target one.
         """
-        tau_x = self.wind.tau_dr_0 * (rx - self.r_in - self.dr)
+        tau_x = self.wind.tau_dr_0 * (rx - self.r_init - self.dr)
         xi = self.ionization_parameter(rx, 0, tau_x, self.wind.rho_shielding)
         ionization_difference = const.ionization_parameter_critical - xi
         return ionization_difference
@@ -458,7 +467,7 @@ class QSOSED:
         Returns:
             X-Ray optical depth at the point (r,z)
         """
-        tau_x_0 = self.r_x - self.r_in
+        tau_x_0 = self.r_x - self.r_init
         if (self.r_x < r_0):
             tau_x_0 += 100 * (r_0 - self.r_x)
         distance = np.sqrt(r ** 2 + z ** 2)
@@ -480,8 +489,8 @@ class QSOSED:
         Returns:
             Factor k in the force multiplier formula.
         """
-        # k = 0.03 + 0.385 * np.exp(-1.4 * xi**(0.6))
-        k = self.k_interpolator(np.log10(xi))
+        k = 0.03 + 0.385 * np.exp(-1.4 * xi**(0.6))
+        #k = self.k_interpolator(np.log10(xi))
         assert k >= 0, "k cannot be negative!"
         return k
 
@@ -495,15 +504,15 @@ class QSOSED:
         Returns:
             Factor eta_max in the force multiplier formula.
         """
-        """
+        
         if(np.log10(xi) < 0.5):
             aux = 6.9 * np.exp(0.16 * xi**(0.4))
             eta_max = 10**aux
         else:
             aux = 9.1 * np.exp(-7.96e-3 * xi)
             eta_max = 10**aux
-        """
-        eta_max = 10**(self.log_etamax_interpolator(np.log10(xi)))
+        
+        #eta_max = 10**(self.log_etamax_interpolator(np.log10(xi)))
         assert eta_max >= 0, "Eta Max cannot be negative!"
         return eta_max
 
@@ -535,9 +544,9 @@ class QSOSED:
         Returns:
             fm : force multiplier.
         """
-        XI_UPPER_LIM = 1e4
-        if (xi > XI_UPPER_LIM):
-            return 0
+        #XI_UPPER_LIM = 1e4
+        #if (xi > XI_UPPER_LIM):
+        #    return 0
         TAU_MAX_TOL = 0.001
         k = self.force_multiplier_k(xi)
         eta_max = self.force_multiplier_eta_max(xi)

@@ -2,19 +2,22 @@
 Auxiliary file for Numba functions.
 """
 
+import inspect
+
 import numpy as np
 import scipy
-from qwind import constants as const
-import inspect
-from numba import jitclass, jit, int32, float32, cfunc
-from numba.types import intc, CPointer, float64
+from numba import cfunc, float32, int32, jit, jitclass
+from numba.types import CPointer, float64, intc
 from scipy import LowLevelCallable
 from scipy.integrate import quad
-from qwind import compiled_functions
 
-## aux variables for integration  ##
+from qwind import compiled_functions
+from qwind import constants as const
+
+# aux variables for integration  ##
 phids = np.linspace(0, np.pi, 100 + 1)
-deltaphids = np.asarray([phids[i + 1] - phids[i] for i in range(0, len(phids) - 1)])
+deltaphids = np.asarray([phids[i + 1] - phids[i]
+                         for i in range(0, len(phids) - 1)])
 rds = np.geomspace(6, 1400, 250 + 1)
 deltards = np.asarray([rds[i + 1] - rds[i] for i in range(0, len(rds) - 1)])
 
@@ -62,6 +65,13 @@ def jit_integrand(integrand_function):
     cf = cfunc(float64(intc, CPointer(float64)))
 
     return LowLevelCallable(cf(wrapped).ctypes)
+
+r_range_interp = 0
+fraction_uv_list = 0
+#@jit()
+def uv_fraction_lookup(r):
+    idx = (np.abs(r_range_interp - r)).argmin()
+    return fraction_uv_list[idx]
 
 
 @jit(nopython=True)
@@ -116,7 +126,6 @@ def qwind_integration(r, z):
     integral[1] = 2. * z**2. * integral[1]
     return integral
 
-# @jit(nopython = True)
 @jit_integrand
 def integration_quad_r_phid(phi_d, r_d, r, z):
     aux1 = (r - r_d * np.cos(phi_d))
@@ -147,7 +156,7 @@ def integration_quad_z_phid_test(phi_d, r_d, r, z):
 
 def integration_quad_r_rd(r_d, r, z, uv_fraction_interpolator):
     phi_int = quad(integration_quad_r_phid, 0., np.pi, args=(r_d, r, z))[0]
-    uv_fraction = uv_fraction_interpolator(r_d)
+    uv_fraction = uv_fraction_lookup(r)#uv_fraction_interpolator(r_d)
     ff0 = (1. - np.sqrt(6./r_d)) / r_d**2.
     result = ff0 * phi_int * uv_fraction
     return result
@@ -155,15 +164,17 @@ def integration_quad_r_rd(r_d, r, z, uv_fraction_interpolator):
 
 def integration_quad_z_rd(r_d, r, z, uv_fraction_interpolator):
     phi_int = quad(integration_quad_z_phid, 0., np.pi, args=(r_d, r, z))[0]
-    uv_fraction = uv_fraction_interpolator(r_d)
+    uv_fraction = uv_fraction_lookup(r)#uv_fraction_interpolator(r_d)
     ff0 = (1. - np.sqrt(6./r_d)) / r_d**2.
     result = ff0 * phi_int * uv_fraction
     return result
 
 
 def integration_quad(r, z, r_min, r_max, uv_fraction_interpolator):
-    r_part = quad(integration_quad_r_rd, r_min, r_max, args=(r, z, uv_fraction_interpolator), points=[r])[0]
-    z_part = quad(integration_quad_z_rd, r_min, r_max, args=(r, z, uv_fraction_interpolator), points=[r])[0]
+    r_part = quad(integration_quad_r_rd, r_min, r_max, args=(
+        r, z, uv_fraction_interpolator), points=[r])[0]
+    z_part = quad(integration_quad_z_rd, r_min, r_max, args=(
+        r, z, uv_fraction_interpolator), points=[r])[0]
     r_part = 2. * z * r_part
     z_part = 2. * z**2 * z_part
     return [r_part, z_part]
@@ -184,8 +195,10 @@ def integration_quad_z_rd_nointerp(r_d, r, z):
 
 
 def integration_quad_nointerp(r, z, r_min, r_max):
-    r_part = quad(integration_quad_r_rd_nointerp, r_min, r_max, args=(r, z), points=[r])[0]
-    z_part = quad(integration_quad_z_rd_nointerp, r_min, r_max, args=(r, z), points=[r])[0]
+    r_part = quad(integration_quad_r_rd_nointerp, r_min,
+                  r_max, args=(r, z), points=[r])[0]
+    z_part = quad(integration_quad_z_rd_nointerp, r_min,
+                  r_max, args=(r, z), points=[r])[0]
     r_part = 2. * z * r_part
     z_part = 2. * z**2 * z_part
     return [r_part, z_part]
@@ -212,8 +225,10 @@ def _integrate_dblquad_kernel_z(r_d, phi_d, r, z):
 
 @jit()
 def qwind_integration_dblquad(r, z, Rmin, Rmax):
-    r_int, r_error = scipy.integrate.dblquad(_integrate_dblquad_kernel_r, 0 + 0.001, np.pi - 0.001, Rmin, Rmax, args=(r, z))
-    z_int, z_error = scipy.integrate.dblquad(_integrate_dblquad_kernel_z, 0 + 0.001, np.pi - 0.001, Rmin, Rmax, args=(r, z))
+    r_int, r_error = scipy.integrate.dblquad(
+        _integrate_dblquad_kernel_r, 0 + 0.001, np.pi - 0.001, Rmin, Rmax, args=(r, z))
+    z_int, z_error = scipy.integrate.dblquad(
+        _integrate_dblquad_kernel_z, 0 + 0.001, np.pi - 0.001, Rmin, Rmax, args=(r, z))
     r_int = 2. * z * r_int
     z_int = 2. * z**2 * z_int
     return [r_int, z_int, r_error, z_error]
