@@ -66,9 +66,12 @@ def jit_integrand(integrand_function):
 
     return LowLevelCallable(cf(wrapped).ctypes)
 
+
 r_range_interp = 0
 fraction_uv_list = 0
-#@jit()
+# @jit()
+
+
 def uv_fraction_lookup(r):
     idx = (np.abs(r_range_interp - r)).argmin()
     return fraction_uv_list[idx]
@@ -126,6 +129,7 @@ def qwind_integration(r, z):
     integral[1] = 2. * z**2. * integral[1]
     return integral
 
+
 @jit_integrand
 def integration_quad_r_phid(phi_d, r_d, r, z):
     aux1 = (r - r_d * np.cos(phi_d))
@@ -155,16 +159,18 @@ def integration_quad_z_phid_test(phi_d, r_d, r, z):
 
 
 def integration_quad_r_rd(r_d, r, z, uv_fraction_interpolator):
-    phi_int = quad(integration_quad_r_phid, 0., np.pi, args=(r_d, r, z))[0]
-    uv_fraction = uv_fraction_lookup(r)#uv_fraction_interpolator(r_d)
+    phi_int = quad(integration_quad_r_phid, 0.001, np.pi,
+                   args=(r_d, r, z))[0]
+    uv_fraction = uv_fraction_lookup(r)  # uv_fraction_interpolator(r_d)
     ff0 = (1. - np.sqrt(6./r_d)) / r_d**2.
     result = ff0 * phi_int * uv_fraction
     return result
 
 
 def integration_quad_z_rd(r_d, r, z, uv_fraction_interpolator):
-    phi_int = quad(integration_quad_z_phid, 0., np.pi, args=(r_d, r, z))[0]
-    uv_fraction = uv_fraction_lookup(r)#uv_fraction_interpolator(r_d)
+    phi_int = quad(integration_quad_z_phid, 0.001, np.pi,
+                   args=(r_d, r, z))[0]
+    uv_fraction = uv_fraction_lookup(r)  # uv_fraction_interpolator(r_d)
     ff0 = (1. - np.sqrt(6./r_d)) / r_d**2.
     result = ff0 * phi_int * uv_fraction
     return result
@@ -181,14 +187,16 @@ def integration_quad(r, z, r_min, r_max, uv_fraction_interpolator):
 
 
 def integration_quad_r_rd_nointerp(r_d, r, z):
-    phi_int = quad(integration_quad_r_phid, 0., np.pi, args=(r_d, r, z))[0]
+    phi_int = quad(integration_quad_r_phid, 0., np.pi,
+                   args=(r_d, r, z), points=[0])[0]
     ff0 = (1. - np.sqrt(6./r_d)) / r_d**2.
     result = ff0 * phi_int
     return result
 
 
 def integration_quad_z_rd_nointerp(r_d, r, z):
-    phi_int = quad(integration_quad_z_phid, 0., np.pi, args=(r_d, r, z))[0]
+    phi_int = quad(integration_quad_z_phid, 0., np.pi,
+                   args=(r_d, r, z), points=[0])[0]
     ff0 = (1. - np.sqrt(6./r_d)) / r_d**2.
     result = ff0 * phi_int
     return result
