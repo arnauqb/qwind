@@ -5,3 +5,12 @@
 *.pyc
 *.png
 *.jpg
+*.txt
+.pytest*
+settings.json
+launch.json
+*-checkpoint.py
+line*.csv
+.vscode/*
+*.ipynb_checkpoints*
+*.so
