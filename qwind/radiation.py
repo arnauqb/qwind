@@ -317,7 +317,7 @@ class QSOSED:
         self.wind.r_init = self.r_in + 0.5 * self.dr
         self.uv_fraction, self.xray_fraction = self.sed_class.uv_fraction, self.sed_class.xray_fraction
         self.uv_fraction_list = self.sed_class.compute_uv_fractions(
-            1e26, include_corona=True)
+            1e26, include_corona=True)[0]
         self.r_range_interp = np.linspace(
             self.sed_class.corona_radius, self.sed_class.gravity_radius, len(self.uv_fraction_list))
         self.xray_luminosity = self.wind.mdot * \
