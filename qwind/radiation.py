@@ -308,7 +308,10 @@ class QSOSED:
         self.wind = wind
         self.sed_class = sed.SED(
             M=wind.M / const.Ms, mdot=wind.mdot, astar=wind.spin)
-        self.r_in = self.sed_class.corona_radius
+        self.r_in = self.sed_class.warm_radius
+        if ( self.wind.rho_shielding is None):
+            self.wind.rho_shielding = self.wind.density_ss(self.r_in)
+        self.wind.tau_dr_0 = self.wind.tau_dr(self.wind.rho_shielding)
         self.wind.r_in = self.r_in
         self.r_out = self.sed_class.gravity_radius
         self.wind.r_out = self.r_out
@@ -413,7 +416,7 @@ class QSOSED:
         Returns:
             difference between current ion. parameter and target one.
         """
-        tau_x = self.wind.tau_dr_0 * (rx - self.r_init - self.dr)
+        tau_x = self.wind.tau_dr_0 * (rx - self.sed_class.corona_radius - self.dr)
         xi = self.ionization_parameter(rx, 0, tau_x, self.wind.rho_shielding)
         ionization_difference = const.ionization_parameter_critical - xi
         return ionization_difference
@@ -467,7 +470,7 @@ class QSOSED:
         Returns:
             X-Ray optical depth at the point (r,z)
         """
-        tau_x_0 = self.r_x - self.r_init
+        tau_x_0 = self.r_x #- self.sed_class.corona_radius
         if (self.r_x < r_0):
             tau_x_0 += 100 * (r_0 - self.r_x)
         distance = np.sqrt(r ** 2 + z ** 2)
@@ -475,7 +478,7 @@ class QSOSED:
         delta_r = abs(r - r_0)
         tau_x = sec_theta * (tau_dr_0 * tau_x_0 + tau_dr *
                              self.opacity_x_r(r) * delta_r)
-        tau_x = min(tau_x, 50)
+        tau_x = min(tau_x, 100)
         assert tau_x >= 0, "X-Ray optical depth cannot be negative!"
         return tau_x
 

@@ -86,17 +86,17 @@ class Qwind:
         self.r_max = r_max
         self.eta = eta
         self.nr = nr
+        self.rho_shielding = rho_shielding
 
         self.Rg = const.G * self.M / (const.c ** 2)  # gravitational radius
-        self.rho_shielding = rho_shielding
+        
         self.bol_luminosity = self.mdot * self.eddington_luminosity
-        self.tau_dr_0 = self.tau_dr(rho_shielding)
+        #self.tau_dr_0 = self.tau_dr(rho_shielding)
         self.v_thermal = self.thermal_velocity(T)
         self.r_in = r_in
         self.r_out = r_out
         radiation_attr = getattr(radiation, radiation_mode)
         self.radiation = radiation_attr(self)
-        
         print("r_in: %f \n r_out: %f" % (self.r_in, self.r_out))
 
         # create directory if it doesnt exist. Warning, this overwrites previous outputs.
@@ -155,6 +155,15 @@ class Qwind:
         """
 
         return np.sqrt(const.k_B * T / (self.mu * const.m_p)) / const.c
+    
+    def density_ss(self,r):
+        R = r * 2 * self.Rg
+        cut = 18 * (self.M / const.Ms)**(2./21.) * ( self.mdot / self.eta)**(16./21.) * 2 * self.Rg
+        if (R <= cut):
+            rho = 5.24e-4 * (self.M/const.Ms)**(-1.) * (self.mdot/self.eta)**(-2.) * (R/(2*self.Rg))**(3./2.)
+        else:
+            rho = 4.66 * (self.M/const.Ms)**(-7./10.) * (self.mdot/self.eta)**(2./5.) * (R/(2*self.Rg))**(-33./20.)
+        return rho / const.m_p
 
     def tau_dr(self, density):
         """ 
@@ -212,7 +221,7 @@ class Qwind:
             dt=dt
         )
 
-    def start_lines(self, v_z_0=1e7, niter=5000):
+    def start_lines(self, v_z_0=1e7, niter=5000, rho = None):
         """
         Starts and evolves a set of equally spaced streamlines.
 
@@ -226,7 +235,6 @@ class Qwind:
             Number of timesteps.
         """
         print("Starting line iteration")
-
         self.lines = []
 
         for i, r in enumerate(self.lines_r_range):
@@ -241,7 +249,9 @@ class Qwind:
                     continue
             else:
                 v_z_0 = v_z_0
-            self.lines.append(self.line(r_0=r, v_z_0=v_z_0))
+            if(rho is None):
+                rho = self.density_ss(r)
+            self.lines.append(self.line(r_0=r, v_z_0=v_z_0, rho_0 = rho / 100))
         i = 0
         if(self.n_cpus == 1):
             for line in self.lines:
