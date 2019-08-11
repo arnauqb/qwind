@@ -241,7 +241,7 @@ class Qwind:
             if (v_z_0 == "auto"):
                 if (r > self.radiation.sed_class.corona_radius):
                     if (r < 2 * self.radiation.sed_class.corona_radius):
-                        v_z_0 = self.thermal_velocity(2e6) * const.c
+                        v_z_0 = self.thermal_velocity(2.3e6) * const.c
                     else:
                         v_z_0 = self.thermal_velocity(self.radiation.sed_class.disk_temperature4(r)**(1./4.)) * const.c
                 else:
@@ -251,7 +251,7 @@ class Qwind:
                 v_z_0 = v_z_0
             if(rho is None):
                 rho = self.density_ss(r)
-            self.lines.append(self.line(r_0=r, v_z_0=v_z_0, rho_0 = rho / 100))
+            self.lines.append(self.line(r_0=r, v_z_0=v_z_0, rho_0 = rho ))
         i = 0
         if(self.n_cpus == 1):
             for line in self.lines:

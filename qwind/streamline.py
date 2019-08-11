@@ -177,7 +177,7 @@ class streamline():
         """
         # compute acceleration vector #
         fg = self.force_gravity()
-        fr = self.radiation.force_radiation(self.r, self.z, self.fm, self.tau_uv)
+        fr = self.radiation.force_radiation(self.r, self.z, self.fm, self.tau_dr)
         self.a = fg 
         if('gravityonly' in self.wind.modes): # useful for debugging
             self.a += 0.

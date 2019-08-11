@@ -131,10 +131,11 @@ def qwind_integration(r, z):
 
 
 @jit_integrand
-def integration_quad_r_phid(phi_d, r_d, r, z):
+def integration_quad_r_phid(phi_d, r_d, r, z, tau_dr):
     aux1 = (r - r_d * np.cos(phi_d))
     delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
-    result = aux1 / delta**2.
+    abs_uv = np.exp(-tau_dr * np.sqrt(delta))
+    result = abs_uv * aux1 / delta**2.
     return result
 
 
@@ -146,67 +147,69 @@ def integration_quad_r_phid_test(phi_d, r_d, r, z):
 
 
 @jit_integrand
-def integration_quad_z_phid(phi_d, r_d, r, z):
+def integration_quad_z_phid(phi_d, r_d, r, z, tau_dr):
     delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
+    abs_uv = np.exp(-tau_dr * np.sqrt(delta))
+    result = abs_uv / delta**2.
+    return result
+
+
+def integration_quad_z_phid_test(phi_d, r_d, r, z, tau_dr):
+    delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
+    abs_uv = np.exp(-tau_dr * delta)
     result = 1. / delta**2.
     return result
 
 
-def integration_quad_z_phid_test(phi_d, r_d, r, z):
-    delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
-    result = 1. / delta**2.
-    return result
-
-
-def integration_quad_r_rd(r_d, r, z, uv_fraction_interpolator):
-    phi_int = quad(integration_quad_r_phid, 0.001, np.pi,
-                   args=(r_d, r, z))[0]
-    uv_fraction = uv_fraction_lookup(r)  # uv_fraction_interpolator(r_d)
+def integration_quad_r_rd(r_d, r, z, tau_dr):
+    phi_int = quad(integration_quad_r_phid, 0., np.pi,
+                   args=(r_d, r, z, tau_dr), points = [0])[0]
+    uv_fraction = uv_fraction_lookup(r_d)
     ff0 = (1. - np.sqrt(6./r_d)) / r_d**2.
     result = ff0 * phi_int * uv_fraction
-    return result
+    return result 
 
 
-def integration_quad_z_rd(r_d, r, z, uv_fraction_interpolator):
-    phi_int = quad(integration_quad_z_phid, 0.001, np.pi,
-                   args=(r_d, r, z))[0]
-    uv_fraction = uv_fraction_lookup(r)  # uv_fraction_interpolator(r_d)
+def integration_quad_z_rd(r_d, r, z, tau_dr):
+    phi_int = quad(integration_quad_z_phid, 0., np.pi,
+                   args=(r_d, r, z, tau_dr), points = [0])[0]
+    uv_fraction = uv_fraction_lookup(r_d)
     ff0 = (1. - np.sqrt(6./r_d)) / r_d**2.
     result = ff0 * phi_int * uv_fraction
-    return result
+    return result 
 
 
-def integration_quad(r, z, r_min, r_max, uv_fraction_interpolator):
+def integration_quad(r, z, tau_dr, r_min, r_max):
     r_part = quad(integration_quad_r_rd, r_min, r_max, args=(
-        r, z, uv_fraction_interpolator), points=[r])[0]
+        r, z, tau_dr))[0]
     z_part = quad(integration_quad_z_rd, r_min, r_max, args=(
-        r, z, uv_fraction_interpolator), points=[r])[0]
+        r, z, tau_dr))[0]
     r_part = 2. * z * r_part
     z_part = 2. * z**2 * z_part
     return [r_part, z_part]
 
 
-def integration_quad_r_rd_nointerp(r_d, r, z):
+def integration_quad_r_rd_nointerp(r_d, r, z, tau_dr):
     phi_int = quad(integration_quad_r_phid, 0., np.pi,
-                   args=(r_d, r, z), points=[0])[0]
+                   args=(r_d, r, z, tau_dr), points=[0])[0]
     ff0 = (1. - np.sqrt(6./r_d)) / r_d**2.
     result = ff0 * phi_int
     return result
 
 
-def integration_quad_z_rd_nointerp(r_d, r, z):
+def integration_quad_z_rd_nointerp(r_d, r, z, tau_dr):
     phi_int = quad(integration_quad_z_phid, 0., np.pi,
-                   args=(r_d, r, z), points=[0])[0]
+                   args=(r_d, r, z, tau_dr), points=[0])[0]
     ff0 = (1. - np.sqrt(6./r_d)) / r_d**2.
     result = ff0 * phi_int
     return result
 
 
-def integration_quad_nointerp(r, z, r_min, r_max):
+def integration_quad_nointerp(r, z, tau_dr, r_min, r_max):
     r_part = quad(integration_quad_r_rd_nointerp, r_min,
-                  r_max, args=(r, z), points=[r])[0]
+                  r_max, args=(r, z, tau_dr))[0]
     z_part = quad(integration_quad_z_rd_nointerp, r_min,
-                  r_max, args=(r, z), points=[r])[0]
+                  r_max, args=(r, z, tau_dr))[0]
     r_part = 2. * z * r_part
     z_part = 2. * z**2 * z_part
     return [r_part, z_part]

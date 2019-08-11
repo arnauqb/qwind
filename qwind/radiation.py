@@ -311,6 +311,7 @@ class QSOSED:
         self.r_in = self.sed_class.warm_radius
         if ( self.wind.rho_shielding is None):
             self.wind.rho_shielding = self.wind.density_ss(self.r_in)
+        #print(self.wind.rho_shielding)
         self.wind.tau_dr_0 = self.wind.tau_dr(self.wind.rho_shielding)
         self.wind.r_in = self.r_in
         self.r_out = self.sed_class.gravity_radius
@@ -359,9 +360,9 @@ class QSOSED:
                                        2.73, 2.00, 1.58, 1.20, 0.78]
 
         self.k_interpolator = interpolate.interp1d(
-            k_interp_xi_values, k_interp_k_values, fill_value="extrapolate")  # important! xi is log here
+            k_interp_xi_values, k_interp_k_values, fill_value="extrapolate", kind = 'cubic')  # important! xi is log here
         self.log_etamax_interpolator = interpolate.interp1d(
-            etamax_interp_xi_values, etamax_interp_etamax_values, fill_value="extrapolate")  # important! xi is log here
+            etamax_interp_xi_values, etamax_interp_etamax_values, fill_value="extrapolate", kind='cubic')  # important! xi is log here
 
     def optical_depth_uv(self, r, z, r_0, tau_dr, tau_dr_0):
         """
@@ -377,9 +378,9 @@ class QSOSED:
         Returns:
             UV optical depth at point (r,z) 
         """
-        delta_r_0 = abs(r_0 - self.r_init)
+        delta_r_0 = abs(r_0 - self.r_in)
         delta_r = abs(r - r_0)
-        distance = np.sqrt(r**2 + z**2)
+        distance = np.sqrt((r - self.r_in)**2 + z**2)
         sec_theta = distance / r
         tau_uv = sec_theta * (delta_r_0 * tau_dr_0 + delta_r * tau_dr)
         tau_uv = min(tau_uv, 50)
@@ -403,7 +404,7 @@ class QSOSED:
         xi = self.xray_luminosity * \
             np.exp(-tau_x) / (rho_shielding *
                               distance_2 * self.wind.Rg**2)  # / 8.2125
-        assert xi > 0, "Ionization parameter cannot be negative!"
+        #assert xi > 0, "Ionization parameter cannot be negative!"
         return xi
 
     def ionization_radius_kernel(self, rx):
@@ -416,7 +417,7 @@ class QSOSED:
         Returns:
             difference between current ion. parameter and target one.
         """
-        tau_x = self.wind.tau_dr_0 * (rx - self.sed_class.corona_radius - self.dr)
+        tau_x = self.wind.tau_dr_0 * (rx - self.r_in)
         xi = self.ionization_parameter(rx, 0, tau_x, self.wind.rho_shielding)
         ionization_difference = const.ionization_parameter_critical - xi
         return ionization_difference
@@ -426,17 +427,20 @@ class QSOSED:
         Computes the disc radius at which xi = xi_0 using the bisect method.
         """
         try:
-            r_x = optimize.bisect(
-                self.ionization_radius_kernel, self.r_in, self.r_out, xtol=1e-14)
-        except:
+        #r_x = optimize.bisect(self.ionization_radius_kernel, self.r_in, self.r_out)
+            r_x = optimize.root_scalar(self.ionization_radius_kernel, bracket = [self.r_in, self.r_out])
+        except ValueError:
             print("ionization radius outside the disc.")
-            if(self.ionization_radius_kernel(self.wind.r_min) > 0):
+            if(self.ionization_radius_kernel(self.wind.r_min) < 0):
                 print("ionization radius is below r_min, nothing is ionized.")
                 r_x = self.wind.r_min
             else:
                 print(
                     "ionization radius is very large, atmosphere is completely ionized.")
                 r_x = self.wind.r_max
+            return r_x
+        assert r_x.converged == True
+        r_x = r_x.root
         assert r_x > 0, "Got non physical ionization radius!"
         return r_x
 
@@ -470,7 +474,7 @@ class QSOSED:
         Returns:
             X-Ray optical depth at the point (r,z)
         """
-        tau_x_0 = self.r_x #- self.sed_class.corona_radius
+        tau_x_0 = self.r_x - self.r_in
         if (self.r_x < r_0):
             tau_x_0 += 100 * (r_0 - self.r_x)
         distance = np.sqrt(r ** 2 + z ** 2)
@@ -547,7 +551,7 @@ class QSOSED:
         Returns:
             fm : force multiplier.
         """
-        #XI_UPPER_LIM = 1e4
+        #XI_UPPER_LIM = 4e4
         #if (xi > XI_UPPER_LIM):
         #    return 0
         TAU_MAX_TOL = 0.001
@@ -564,7 +568,7 @@ class QSOSED:
         assert fm >= 0, "Force multiplier cannot be negative!"
         return fm
 
-    def force_radiation(self, r, z, fm, tau_uv):
+    def force_radiation(self, r, z, fm, tau_dr):
         """
         Computes the radiation force at the point (r,z)
 
@@ -578,20 +582,28 @@ class QSOSED:
             radiation force at the point (r,z) boosted by fm and attenuated by e^tau_uv.
         """
 
-        i_aux = aux_numba.integration_quad(
-            r, z, self.wind.r_min, self.wind.r_max, self.uv_fraction_interpolator)
+        if("constant_uv" in self.wind.modes):
+            i_aux = aux_numba.integration_quad_nointerp(r, z, tau_dr, self.wind.r_min, self.wind.r_max)
+            self.int_hist.append(i_aux)
+            i_aux = np.array(i_aux) * self.sed_class.uv_fraction
+        else:
+            i_aux = aux_numba.integration_quad(
+                r, z, tau_dr, self.wind.r_min, self.wind.r_max)
+            self.int_hist.append(i_aux)
 
-        self.int_hist.append(i_aux)
-        try:
-            assert i_aux[0] >= 0
-            assert i_aux[1] >= 0
-        except:
-            if ('old_integral' in self.wind.modes):
-                pass
-            else:
-                raise "Negative radiation force!"
+        #try:
+        #    assert i_aux[0] >= 0
+        #    assert i_aux[1] >= 0
+        #except:
+        #    if ('old_integral' in self.wind.modes):
+        #        pass
+        #    else:
+        #        raise "Negative radiation force!"
 
-        abs_uv = np.exp(-tau_uv)
-        force = (1 + fm) * abs_uv * self.force_radiation_constant * \
+        #force_r = (i_aux[0][0] + fm * i_aux[0][1]) * abs_uv * self.force_radiation_constant
+        #force_z = (i_aux[1][0] + fm * i_aux[1][1]) * abs_uv * self.force_radiation_constant
+        #force = [force_r, 0., force_z]
+        #abs_uv = np.exp(-tau_uv)
+        force = (1 + fm)  * self.force_radiation_constant * \
             np.asarray([i_aux[0], 0., i_aux[1]])
         return force
