@@ -102,6 +102,7 @@ class SimpleSed:
             np.exp(-tau_x) / (rho_shielding *
                               distance_2 * self.wind.Rg**2)  # / 8.2125
         assert xi > 0, "Ionization parameter cannot be negative!"
+        xi += 1e-20 # to avoid overflows 
         return xi
 
     def ionization_radius_kernel(self, rx):
@@ -212,7 +213,7 @@ class SimpleSed:
             aux = 9.1 * np.exp(-7.96e-3 * xi)
             eta_max = 10**aux
         #eta_max = 10**(self.log_etamax_interpolator(np.log10(xi)))
-        assert eta_max >= 0, "Eta Max cannot be negative!"
+        #assert eta_max >= 0, "Eta Max cannot be negative!"
         return eta_max
 
     def sobolev_optical_depth(self, tau_dr, dv_dr):
@@ -317,8 +318,8 @@ class QSOSED:
         self.r_out = self.sed_class.gravity_radius
         self.wind.r_out = self.r_out
         self.dr = (self.r_out - self.r_in) / (self.wind.nr - 1)
-        self.r_init = self.r_in + 0.5 * self.dr
-        self.wind.r_init = self.r_in + 0.5 * self.dr
+        self.r_init = self.r_in #+ 0.5 * self.dr
+        self.wind.r_init = self.r_in #+ 0.5 * self.dr
         self.uv_fraction, self.xray_fraction = self.sed_class.uv_fraction, self.sed_class.xray_fraction
         self.uv_fraction_list = self.sed_class.compute_uv_fractions(
             1e26, include_corona=True)[0]
@@ -404,7 +405,8 @@ class QSOSED:
         xi = self.xray_luminosity * \
             np.exp(-tau_x) / (rho_shielding *
                               distance_2 * self.wind.Rg**2)  # / 8.2125
-        #assert xi > 0, "Ionization parameter cannot be negative!"
+        assert xi > 0, "Ionization parameter cannot be negative!"
+        xi += 1e-20 # to avoid overflows 
         return xi
 
     def ionization_radius_kernel(self, rx):
@@ -474,15 +476,24 @@ class QSOSED:
         Returns:
             X-Ray optical depth at the point (r,z)
         """
-        tau_x_0 = self.r_x - self.r_in
-        if (self.r_x < r_0):
-            tau_x_0 += 100 * (r_0 - self.r_x)
-        distance = np.sqrt(r ** 2 + z ** 2)
-        sec_theta = distance / r
-        delta_r = abs(r - r_0)
-        tau_x = sec_theta * (tau_dr_0 * tau_x_0 + tau_dr *
-                             self.opacity_x_r(r) * delta_r)
-        tau_x = min(tau_x, 100)
+        tau_x = self.wind.tau_dr_shielding
+        tantheta = z / r
+        d = np.sqrt(r**2 + z**2)
+        if ( r <= self.r_x):
+            tau_x = tau_x * np.sqrt(r**2 + z**2)
+        else:
+            dp = self.r_x * np.sqrt(1 + tantheta**2)
+            dp2 = d - dp 
+            tau_x = tau_x * (dp + 100 * dp2)    
+        #tau_x_0 = self.r_x - self.r_in
+        #if (self.r_x < r_0):
+        #    tau_x_0 += 100 * (r_0 - self.r_x)
+        #distance = np.sqrt(r ** 2 + z ** 2)
+        #sec_theta = distance / r
+        #delta_r = abs(r - r_0)
+        #tau_x = sec_theta * (tau_dr_0 * tau_x_0 + tau_dr *
+        #                     self.opacity_x_r(r) * delta_r)
+        #tau_x = min(tau_x, 50)
         assert tau_x >= 0, "X-Ray optical depth cannot be negative!"
         return tau_x
 
@@ -588,7 +599,7 @@ class QSOSED:
             i_aux = np.array(i_aux) * self.sed_class.uv_fraction
         else:
             i_aux = aux_numba.integration_quad(
-                r, z, tau_dr, self.wind.r_min, self.wind.r_max)
+                r, z, self.wind.tau_dr_shielding, self.wind.r_min, self.wind.r_max)
             self.int_hist.append(i_aux)
 
         #try:

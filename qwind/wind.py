@@ -92,6 +92,7 @@ class Qwind:
         
         self.bol_luminosity = self.mdot * self.eddington_luminosity
         #self.tau_dr_0 = self.tau_dr(rho_shielding)
+        self.tau_dr_shielding = self.tau_dr(rho_shielding)
         self.v_thermal = self.thermal_velocity(T)
         self.r_in = r_in
         self.r_out = r_out
