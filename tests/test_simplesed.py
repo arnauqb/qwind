@@ -23,7 +23,7 @@ radiation = wind.Qwind(
     intsteps=1,
     nr=20,
     save_dir="results",
-    radiation_mode="SimpleSed",
+    radiation_mode="SimpleSED",
     n_cpus=1,
 ).radiation
 

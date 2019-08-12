@@ -6,9 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 import matplotlib.ticker as ticker
-import seaborn as sns
 #sns.set()
-sns.set_context("talk")
 from glob import glob
 import os
 from qwind import constants
@@ -23,8 +21,8 @@ def accretion_rate(m, mdot):
     acc = lumin / (0.06 * constants.c**2)
     return acc
 
-def pcolormesh_sensible(x_range, y_range, data, ax, log = True):
-    
+def pcolormesh_sensible(x_range, y_range, data, ax, log = True, cmap = "viridis"):
+    cmap = plt.get_cmap(cmap)
     if(log):
         x_range_log = np.log10(x_range)
         y_range_log = np.log10(y_range)
@@ -46,7 +44,7 @@ def pcolormesh_sensible(x_range, y_range, data, ax, log = True):
         x_range_plot = np.linspace(x_range[0] - dx/2., x_range[-1] + dx/2., len(x_range) + 1)
         y_range_plot = np.linspace(y_range[0] - dy/2., y_range[-1] + dy/2., len(y_range) + 1)
      
-    cmap = ax.pcolormesh(x_range_plot, y_range_plot, np.transpose(data))
+    cmap = ax.pcolormesh(x_range_plot, y_range_plot, np.transpose(data), cmap = cmap)
     if(log):
         ax.set_xscale('log')
         ax.set_yscale('log')

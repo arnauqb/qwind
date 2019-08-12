@@ -1,5 +1,6 @@
 import os
 import shutil
+import sys
 from multiprocessing import Pool
 
 import numpy as np
@@ -8,7 +9,7 @@ from numba import jit, jitclass
 from scipy import interpolate
 
 import qwind.constants as const
-from qwind import aux_numba, radiation, utils
+from qwind import aux_numba, utils
 
 
 def evolve(line, niter):
@@ -96,8 +97,16 @@ class Qwind:
         self.v_thermal = self.thermal_velocity(T)
         self.r_in = r_in
         self.r_out = r_out
-        radiation_attr = getattr(radiation, radiation_mode)
-        self.radiation = radiation_attr(self)
+        if (radiation_mode == "QSOSED"):
+            from qwind.radiation import qsosed
+            self.radiation = qsosed.QSOSED(self)
+        elif (radiation_mode == "SimpleSED"):
+            from qwind.radiation import simple_sed
+            self.radiation = simple_sed.SimpleSED(self)
+        else:
+            print("Unknown radiation module.")
+            sys.exit()
+
         print("r_in: %f \n r_out: %f" % (self.r_in, self.r_out))
 
         # create directory if it doesnt exist. Warning, this overwrites previous outputs.
