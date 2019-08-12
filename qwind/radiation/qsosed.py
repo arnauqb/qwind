@@ -116,7 +116,7 @@ class QSOSED:
         xi = self.xray_luminosity * \
             np.exp(-tau_x) / (rho_shielding *
                               distance_2 * self.wind.Rg**2)  # / 8.2125
-        print(r, z, tau_x, rho_shielding)
+        #print(r, z, tau_x, rho_shielding)
         assert xi > 0, "Ionization parameter cannot be negative!"
         xi += 1e-20  # to avoid overflows
         return xi
@@ -225,8 +225,10 @@ class QSOSED:
         Returns:
             Factor k in the force multiplier formula.
         """
-        k = 0.03 + 0.385 * np.exp(-1.4 * xi**(0.6))
-        #k = self.k_interpolator(np.log10(xi))
+        if "interp_fm" in self.wind.modes:
+            k = self.k_interpolator(np.log10(xi)) + 0.03
+        else:
+            k = 0.03 + 0.385 * np.exp(-1.4 * xi**(0.6))
         assert k >= 0, "k cannot be negative!"
         return k
 
@@ -240,15 +242,15 @@ class QSOSED:
         Returns:
             Factor eta_max in the force multiplier formula.
         """
-
-        if(np.log10(xi) < 0.5):
-            aux = 6.9 * np.exp(0.16 * xi**(0.4))
-            eta_max = 10**aux
+        if("interp_fm" in self.wind.modes):
+            eta_max = 10**(self.log_etamax_interpolator(np.log10(xi))) + 1
         else:
-            aux = 9.1 * np.exp(-7.96e-3 * xi)
-            eta_max = 10**aux
-
-        #eta_max = 10**(self.log_etamax_interpolator(np.log10(xi)))
+            if(np.log10(xi) < 0.5):
+                aux = 6.9 * np.exp(0.16 * xi**(0.4))
+                eta_max = 10**aux
+            else:
+                aux = 9.1 * np.exp(-7.96e-3 * xi)
+                eta_max = 10**aux
         assert eta_max >= 0, "Eta Max cannot be negative!"
         return eta_max
 
@@ -318,7 +320,7 @@ class QSOSED:
             i_aux = np.array(i_aux) * self.sed_class.uv_fraction
         else:
             i_aux = aux_numba.integration_quad(
-                r, z, self.wind.tau_dr_shielding, self.wind.r_min, self.wind.r_max)
+                r, z, tau_dr, self.wind.r_min, self.wind.r_max)
             self.int_hist.append(i_aux)
 
         # try:

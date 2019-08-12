@@ -23,8 +23,11 @@ class SimpleSED:
         self.r_out = self.wind.r_out
         self.dr = (self.r_out - self.r_in) / (self.wind.nr - 1)
         self.r_init = self.r_in + 0.5 * self.dr
+        self.wind.tau_dr_0 = self.wind.tau_dr(self.wind.rho_shielding)
         self.sed_class = sed.SED(
-            M=wind.M / const.Ms, mdot=wind.mdot, astar=wind.spin)
+            M=wind.M / const.Ms,
+            mdot=wind.mdot,
+            astar=wind.spin)
         self.uv_fraction = 0.85
         self.xray_fraction = 0.15
         self.xray_luminosity = self.wind.mdot * \
@@ -57,9 +60,13 @@ class SimpleSED:
                                        2.73, 2.00, 1.58, 1.20, 0.78]
 
         self.k_interpolator = interpolate.interp1d(
-            k_interp_xi_values, k_interp_k_values, fill_value="extrapolate")  # important! xi is log here
+            k_interp_xi_values,
+            k_interp_k_values,
+            fill_value="extrapolate")  # important! xi is log here
         self.log_etamax_interpolator = interpolate.interp1d(
-            etamax_interp_xi_values, etamax_interp_etamax_values, fill_value="extrapolate")  # important! xi is log here
+            etamax_interp_xi_values, 
+            etamax_interp_etamax_values,
+            fill_value="extrapolate")  # important! xi is log here
 
     def optical_depth_uv(self, r, z, r_0, tau_dr, tau_dr_0):
         """
@@ -92,7 +99,8 @@ class SimpleSED:
             r: radius in Rg units.
             z: height in Rg units.
             tau_x: X-Ray optical depth at the point (r,z)
-            rho_shielding: density of the atmosphere that contributes to shielding the X-Rays.
+            rho_shielding: density of the atmosphere that contributes
+                           to shielding the X-Rays.
 
         Returns:
             ionization parameter.
@@ -102,7 +110,7 @@ class SimpleSED:
             np.exp(-tau_x) / (rho_shielding *
                               distance_2 * self.wind.Rg**2)  # / 8.2125
         assert xi > 0, "Ionization parameter cannot be negative!"
-        xi += 1e-20 # to avoid overflows 
+        xi += 1e-20  # to avoid overflow
         return xi
 
     def ionization_radius_kernel(self, rx):
@@ -191,8 +199,10 @@ class SimpleSED:
         Returns:
             Factor k in the force multiplier formula.
         """
-        k = 0.03 + 0.385 * np.exp(-1.4 * xi**(0.6))
-        #k = self.k_interpolator(np.log10(xi))
+        if "interp_fm" in self.wind.modes:
+            k = max(self.k_interpolator(np.log10(xi)), 0.03)
+        else:
+            k = 0.03 + 0.385 * np.exp(-1.4 * xi**(0.6))
         assert k >= 0, "k cannot be negative!"
         return k
 
@@ -206,14 +216,16 @@ class SimpleSED:
         Returns:
             Factor eta_max in the force multiplier formula.
         """
-        if(np.log10(xi) < 0.5):
-            aux = 6.9 * np.exp(0.16 * xi**(0.4))
-            eta_max = 10**aux
+        if("interp_fm" in self.wind.modes):
+            eta_max = 10**(self.log_etamax_interpolator(np.log10(xi))) + 1
         else:
-            aux = 9.1 * np.exp(-7.96e-3 * xi)
-            eta_max = 10**aux
-        #eta_max = 10**(self.log_etamax_interpolator(np.log10(xi)))
-        #assert eta_max >= 0, "Eta Max cannot be negative!"
+            if(np.log10(xi) < 0.5):
+                aux = 6.9 * np.exp(0.16 * xi**(0.4))
+                eta_max = 10**aux
+            else:
+                aux = 9.1 * np.exp(-7.96e-3 * xi)
+                eta_max = 10**aux
+        assert eta_max >= 0, "Eta Max cannot be negative!"
         return eta_max
 
     def sobolev_optical_depth(self, tau_dr, dv_dr):
@@ -261,7 +273,7 @@ class SimpleSED:
         assert fm >= 0, "Force multiplier cannot be negative!"
         return fm
 
-    def force_radiation(self, r, z, fm, tau_uv):
+    def force_radiation(self, r, z, fm, tau_dr):
         """
         Computes the radiation force at the point (r,z)
 
@@ -282,19 +294,11 @@ class SimpleSED:
                 r, z, self.wind.r_min, self.wind.r_max)
         else:
             i_aux = aux_numba.integration_quad_nointerp(
-                r, z, self.wind.r_min, self.wind.r_max)
+                r, z, tau_dr, self.wind.r_min, self.wind.r_max)
 
         self.int_hist.append(i_aux)
-        try:
-            assert i_aux[0] >= 0
-            assert i_aux[1] >= 0
-        except:
-            if ('old_integral' in self.wind.modes):
-                pass
-            else:
-                raise "Negative radiation force!"
 
-        abs_uv = np.exp(-tau_uv)
-        force = (1 + fm) * abs_uv * self.force_radiation_constant * \
+        #abs_uv = np.exp(-tau_uv)
+        force = (1 + fm) * self.force_radiation_constant * \
             np.asarray([i_aux[0], 0., i_aux[1]])
         return force

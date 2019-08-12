@@ -163,20 +163,20 @@ def integration_quad_z_phid_test(phi_d, r_d, r, z, tau_dr):
 
 def integration_quad_r_rd(r_d, r, z, tau_dr):
     phi_int = quad(integration_quad_r_phid, 0.001, np.pi,
-                   args=(r_d, r, z, tau_dr), points = [0])[0]
+                   args=(r_d, r, z, tau_dr))[0]
     uv_fraction = uv_fraction_lookup(r_d)
     ff0 = (1. - np.sqrt(6./r_d)) / r_d**2.
     result = ff0 * phi_int * uv_fraction
-    return result 
+    return result
 
 
 def integration_quad_z_rd(r_d, r, z, tau_dr):
     phi_int = quad(integration_quad_z_phid, 0.001, np.pi,
-                   args=(r_d, r, z, tau_dr), points = [0])[0]
+                   args=(r_d, r, z, tau_dr))[0]
     uv_fraction = uv_fraction_lookup(r_d)
     ff0 = (1. - np.sqrt(6./r_d)) / r_d**2.
     result = ff0 * phi_int * uv_fraction
-    return result 
+    return result
 
 
 def integration_quad(r, z, tau_dr, r_min, r_max):
