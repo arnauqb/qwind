@@ -405,6 +405,7 @@ class QSOSED:
         xi = self.xray_luminosity * \
             np.exp(-tau_x) / (rho_shielding *
                               distance_2 * self.wind.Rg**2)  # / 8.2125
+        print(r,z,tau_x,rho_shielding)
         assert xi > 0, "Ionization parameter cannot be negative!"
         xi += 1e-20 # to avoid overflows 
         return xi
@@ -461,6 +462,12 @@ class QSOSED:
         else:
             return 100
 
+    def optical_depth_x_diff(self, r, z, r_0, tau_dr, rho_shielding):
+
+        if ( r < r_0):
+            return rho_shielding * self.opacity_x_r(r)
+
+
     def optical_depth_x(self, r, z, r_0, tau_dr, tau_dr_0, rho_shielding):
         """
         X-Ray optical depth at a distance d.
@@ -493,8 +500,8 @@ class QSOSED:
         #delta_r = abs(r - r_0)
         #tau_x = sec_theta * (tau_dr_0 * tau_x_0 + tau_dr *
         #                     self.opacity_x_r(r) * delta_r)
-        #tau_x = min(tau_x, 50)
         assert tau_x >= 0, "X-Ray optical depth cannot be negative!"
+        tau_x = min(tau_x, 50)
         return tau_x
 
     def force_multiplier_k(self, xi):
