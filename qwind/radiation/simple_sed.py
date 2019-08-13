@@ -200,7 +200,7 @@ class SimpleSED:
             Factor k in the force multiplier formula.
         """
         if "interp_fm" in self.wind.modes:
-            k = max(self.k_interpolator(np.log10(xi)), 0.03)
+            k = max(self.k_interpolator(np.log10(xi)), 0.4)
         else:
             k = 0.03 + 0.385 * np.exp(-1.4 * xi**(0.6))
         assert k >= 0, "k cannot be negative!"
@@ -273,7 +273,7 @@ class SimpleSED:
         assert fm >= 0, "Force multiplier cannot be negative!"
         return fm
 
-    def force_radiation(self, r, z, fm, tau_dr):
+    def force_radiation(self, r, z, fm, tau_dr, tau_uv):
         """
         Computes the radiation force at the point (r,z)
 
@@ -294,11 +294,10 @@ class SimpleSED:
                 r, z, self.wind.r_min, self.wind.r_max)
         else:
             i_aux = aux_numba.integration_quad_nointerp(
-                r, z, tau_dr, self.wind.r_min, self.wind.r_max)
+                r, z, 0, self.wind.r_min, self.wind.r_max)
 
         self.int_hist.append(i_aux)
-
-        #abs_uv = np.exp(-tau_uv)
-        force = (1 + fm) * self.force_radiation_constant * \
+        abs_uv = np.exp(-tau_uv)
+        force = abs_uv * (1 + fm) * self.force_radiation_constant * \
             np.asarray([i_aux[0], 0., i_aux[1]])
         return force

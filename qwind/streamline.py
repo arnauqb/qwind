@@ -145,12 +145,12 @@ class streamline():
         Returns:
             rho: updated density at the current point.
         """
-        V_Z_CRIT = 3.33e-10
-        if(self.v_z < V_Z_CRIT):
-            self.rho_hist.append(self.rho)
-            return self.rho
+        #V_Z_CRIT = 3.33e-10
+        #if(self.v_z < V_Z_CRIT):
+        #    self.rho_hist.append(self.rho)
+        #    return self.rho
 
-        radial = (self.r / self.r_0) ** (-2.)
+        radial = (self.d / self.r_0) ** (-2.)
         v_ratio = self.v_z_0 / np.linalg.norm(np.asarray(self.v)[[0,2]]) 
         self.rho = self.rho_0 * radial * v_ratio
         # save to grid #
@@ -177,7 +177,7 @@ class streamline():
         """
         # compute acceleration vector #
         fg = self.force_gravity()
-        fr = self.radiation.force_radiation(self.r, self.z, self.fm, self.tau_dr)
+        fr = self.radiation.force_radiation(self.r, self.z, self.fm, self.tau_dr, self.tau_uv)
         self.a = fg 
         if('gravityonly' in self.wind.modes): # useful for debugging
             self.a += 0.
