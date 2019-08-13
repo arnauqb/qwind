@@ -3,14 +3,28 @@ Module to handle plotting.
 """
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
-import matplotlib.ticker as ticker
 #sns.set()
 from glob import glob
 import os
 from qwind import constants
+import matplotlib as mpl
+nice_fonts = {
+        # Use LaTeX to write all text
+        "text.usetex": True,
+        "font.family": "serif",
+        # Use 10pt font in plots, to match 10pt font in document
+        "axes.labelsize": 10,
+        "font.size": 10,
+        # Make the legend/label fonts a little smaller
+        "legend.fontsize": 8,
+        "xtick.labelsize": 8,
+        "ytick.labelsize": 8,
+}
+import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
+import matplotlib.ticker as ticker
 
+mpl.rcParams.update(nice_fonts)
 
 def luminosity(m, mdot):
     Rg = constants.G * m * constants.Ms / constants.c**2
@@ -21,7 +35,7 @@ def accretion_rate(m, mdot):
     acc = lumin / (0.06 * constants.c**2)
     return acc
 
-def pcolormesh_sensible(x_range, y_range, data, ax, log = True, cmap = "viridis"):
+def pcolormesh_sensible(x_range, y_range, data, ax, log = True, cmap = "viridis", vmin = None, vmax = None):
     cmap = plt.get_cmap(cmap)
     if(log):
         x_range_log = np.log10(x_range)
@@ -44,7 +58,10 @@ def pcolormesh_sensible(x_range, y_range, data, ax, log = True, cmap = "viridis"
         x_range_plot = np.linspace(x_range[0] - dx/2., x_range[-1] + dx/2., len(x_range) + 1)
         y_range_plot = np.linspace(y_range[0] - dy/2., y_range[-1] + dy/2., len(y_range) + 1)
      
-    cmap = ax.pcolormesh(x_range_plot, y_range_plot, np.transpose(data), cmap = cmap)
+    if ((vmin is not None) or (vmax is not None)):
+        cmap = ax.pcolormesh(x_range_plot, y_range_plot, np.transpose(data), cmap = cmap, norm = LogNorm(vmin = vmin, vmax = vmax))
+    else:
+        cmap = ax.pcolormesh(x_range_plot, y_range_plot, np.transpose(data), cmap = cmap, norm = LogNorm())
     if(log):
         ax.set_xscale('log')
         ax.set_yscale('log')
@@ -79,7 +96,7 @@ def read_data(grid_folder):
 
     return data_pd
 
-def plot_mloss_grid(grid_folder, title = "Wind mass loss."):
+def plot_mloss_grid(grid_folder, title = "Wind mass loss.", ax = None, show_msun = False, cmap = "plasma", vmin = None, vmax = None):
     """
     Reads data and creates mloss grid.
     """
@@ -88,23 +105,31 @@ def plot_mloss_grid(grid_folder, title = "Wind mass loss."):
     M_range = data.M.unique()
     mdot_range = data.mdot.unique()
     data_grid = np.array(data.mloss_norm).reshape(len(M_range), len(mdot_range))
-    fig, ax = plt.subplots(figsize = (15,10))
-    cmap = pcolormesh_sensible(M_range, mdot_range, data_grid, ax, log = True)
-    for i in range(len(M_range)):
-        for j in range(len(mdot_range)):
-            M = M_range[i]
-            mdot = mdot_range[j]
-            mloss_sun = data[(data.M == M) & (data.mdot == mdot)]["mloss_msun"].values[0]
-            mloss_sun = "%.3f"%mloss_sun
-            text = ax.text(M, mdot, mloss_sun, ha="center", va="center", color="w")
-            
+    if ax is None:
+        fig, ax = plt.subplots(figsize = (15,10))
+    if ((vmin is not None) or (vmax is not None)):
+        cmap = pcolormesh_sensible(M_range, mdot_range, data_grid, ax, log = True, cmap = cmap, vmin = vmin, vmax = vmax)
+    else:
+        cmap = pcolormesh_sensible(M_range, mdot_range, data_grid, ax, log = True, cmap = cmap)
+    if show_msun:
+        for i in range(len(M_range)):
+            for j in range(len(mdot_range)):
+                M = M_range[i]
+                mdot = mdot_range[j]
+                mloss_sun = data[(data.M == M) & (data.mdot == mdot)]["mloss_msun"].values[0]
+                mloss_sun = "%.3f"%mloss_sun
+                text = ax.text(M, mdot, mloss_sun, ha="center", va="center", color="w")
+
     cbar = plt.colorbar(cmap, ax = ax)
-    cbar.ax.set_ylabel(r"$\dot M_\mathrm{wind} \; / \; \dot M$ ")
-    ax.set_xlabel(r"$M_{BH}$")
+    #tick_locator = ticker.MaxNLocator(nbins=3)
+    #cbar.locator = tick_locator
+    #cbar.update_ticks()
+    cbar.ax.set_ylabel(r"$\dot M_\mathrm{wind} \; / \; \dot M_\mathrm{acc}$ ")
+    ax.set_xlabel(r"$M_\mathrm{BH} \; [\,\mathrm{M}_\odot\,]$")
     ax.set_ylabel(r"$\dot m$")
     plt.tight_layout()
     ax.set_title(title)   
-    return fig, ax 
+    return ax 
     
 def plot_cross_grid(grid_folder, title = "Wind grid"):
     """

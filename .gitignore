@@ -4,6 +4,7 @@
 *.out
 *.pyc
 *.png
+*.swp
 *.jpg
 *.txt
 .pytest*
@@ -14,3 +15,5 @@ line*.csv
 .vscode/*
 *.ipynb_checkpoints*
 *.so
+*Results*
+*results*
