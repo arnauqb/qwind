@@ -35,13 +35,15 @@ def accretion_rate(m, mdot):
     acc = lumin / (0.06 * constants.c**2)
     return acc
 
-def pcolormesh_sensible(x_range, y_range, data, ax, log = True, cmap = "viridis", vmin = None, vmax = None):
+def pcolormesh_sensible(x_range, y_range, data, ax, logx = True, logy=True, cmap = "viridis", vmin = None, vmax = None, logNorm = True):
     cmap = plt.get_cmap(cmap)
-    if(log):
+    if(logx):
         x_range_log = np.log10(x_range)
-        y_range_log = np.log10(y_range)
     else:
         x_range_log = x_range
+    if(logy):
+        y_range_log = np.log10(y_range)
+    else:
         y_range_log = y_range
         
     dx = x_range_log[1] - x_range_log[0]
@@ -51,19 +53,28 @@ def pcolormesh_sensible(x_range, y_range, data, ax, log = True, cmap = "viridis"
     #for i in range(1,len(y_range_log)):
         #assert dy == y_range_log[i] - y_range_log[i-1], "y array must be equally spaced"
         
-    if(log):
+    if(logx):
         x_range_plot = np.geomspace(10**(np.log10(x_range[0]) - dx/2.), 10**(np.log10(x_range[-1]) + dx/2.), len(x_range) + 1)
-        y_range_plot = np.geomspace(10**(np.log10(y_range[0]) - dy/2.), 10**(np.log10(y_range[-1]) + dy/2.), len(y_range) + 1)
     else:
         x_range_plot = np.linspace(x_range[0] - dx/2., x_range[-1] + dx/2., len(x_range) + 1)
+    if(logy):
+        y_range_plot = np.geomspace(10**(np.log10(y_range[0]) - dy/2.), 10**(np.log10(y_range[-1]) + dy/2.), len(y_range) + 1)
+    else:
         y_range_plot = np.linspace(y_range[0] - dy/2., y_range[-1] + dy/2., len(y_range) + 1)
      
     if ((vmin is not None) or (vmax is not None)):
-        cmap = ax.pcolormesh(x_range_plot, y_range_plot, np.transpose(data), cmap = cmap, norm = LogNorm(vmin = vmin, vmax = vmax))
+        if (logNorm is True):
+            cmap = ax.pcolormesh(x_range_plot, y_range_plot, np.transpose(data), cmap = cmap, norm = LogNorm(vmin = vmin, vmax = vmax))
+        else:
+            cmap = ax.pcolormesh(x_range_plot, y_range_plot, np.transpose(data), cmap = cmap, vmin = vmin, vmax = vmax)
     else:
-        cmap = ax.pcolormesh(x_range_plot, y_range_plot, np.transpose(data), cmap = cmap, norm = LogNorm())
-    if(log):
+        if (logNorm is True):
+            cmap = ax.pcolormesh(x_range_plot, y_range_plot, np.transpose(data), cmap = cmap, norm = LogNorm())
+        else:
+            cmap = ax.pcolormesh(x_range_plot, y_range_plot, np.transpose(data), cmap = cmap)
+    if(logx):
         ax.set_xscale('log')
+    if(logy):
         ax.set_yscale('log')
     return cmap
     
@@ -71,7 +82,7 @@ def read_data(grid_folder):
     """
     Parses data into Pandas dataframe.
     """
-    files = glob(os.path.join(grid_folder, "*"))
+    files = glob(os.path.join(grid_folder, "M_*"))
     mdot_wind_list = []
     for file in files:
         fname = file.split("/")[-1]
@@ -96,7 +107,7 @@ def read_data(grid_folder):
 
     return data_pd
 
-def plot_mloss_grid(grid_folder, title = "Wind mass loss.", ax = None, show_msun = False, cmap = "plasma", vmin = None, vmax = None):
+def plot_mloss_grid(grid_folder, title = "Wind mass loss.", ax = None, logx=True, logy=True, show_msun = False, cmap = "plasma", vmin = None, vmax = None):
     """
     Reads data and creates mloss grid.
     """
@@ -108,9 +119,9 @@ def plot_mloss_grid(grid_folder, title = "Wind mass loss.", ax = None, show_msun
     if ax is None:
         fig, ax = plt.subplots(figsize = (15,10))
     if ((vmin is not None) or (vmax is not None)):
-        cmap = pcolormesh_sensible(M_range, mdot_range, data_grid, ax, log = True, cmap = cmap, vmin = vmin, vmax = vmax)
+        cmap = pcolormesh_sensible(M_range, mdot_range, data_grid, ax, logx=logx, logy=logy, cmap = cmap, vmin = vmin, vmax = vmax)
     else:
-        cmap = pcolormesh_sensible(M_range, mdot_range, data_grid, ax, log = True, cmap = cmap)
+        cmap = pcolormesh_sensible(M_range, mdot_range, data_grid, ax, logx = logx, logy=logy, cmap = cmap)
     if show_msun:
         for i in range(len(M_range)):
             for j in range(len(mdot_range)):

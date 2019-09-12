@@ -20,14 +20,14 @@ class QSOSED:
         self.wind = wind
         self.sed_class = sed.SED(
             M=wind.M / const.Ms, mdot=wind.mdot, astar=wind.spin)
-        self.r_in = self.sed_class.warm_radius
+        self.r_in = self.wind.r_in#50#self.sed_class.warm_radius
         if (self.wind.rho_shielding is None):
             self.wind.rho_shielding = self.wind.density_ss(self.r_in)
         # print(self.wind.rho_shielding)
         self.wind.tau_dr_0 = self.wind.tau_dr(self.wind.rho_shielding)
-        self.wind.r_in = self.r_in
-        self.r_out = self.sed_class.gravity_radius
-        self.wind.r_out = self.r_out
+        #self.wind.r_in = self.r_in
+        self.r_out = self.wind.r_out#1400#self.sed_class.gravity_radius
+        #self.wind.r_out = self.r_out
         self.dr = (self.r_out - self.r_in) / (self.wind.nr - 1)
         self.r_init = self.r_in  # + 0.5 * self.dr
         self.wind.r_init = self.r_in  # + 0.5 * self.dr
@@ -139,7 +139,7 @@ class QSOSED:
         Returns:
             difference between current ion. parameter and target one.
         """
-        tau_x = self.wind.tau_dr_0 * (rx - self.r_in)
+        tau_x = max(min(self.wind.tau_dr_shielding * (rx - self.r_in), 50),0)
         xi = self.ionization_parameter(rx, 0, tau_x, self.wind.rho_shielding)
         ionization_difference = const.ionization_parameter_critical - xi
         return ionization_difference
@@ -151,10 +151,10 @@ class QSOSED:
         try:
             #r_x = optimize.bisect(self.ionization_radius_kernel, self.r_in, self.r_out)
             r_x = optimize.root_scalar(self.ionization_radius_kernel, bracket=[
-                                       self.r_in, self.r_out])
+                                       self.wind.r_min, self.wind.r_max])
         except ValueError:
             print("ionization radius outside the disc.")
-            if(self.ionization_radius_kernel(self.wind.r_min) < 0):
+            if(self.ionization_radius_kernel(self.wind.r_min) > 0):
                 print("ionization radius is below r_min, nothing is ionized.")
                 r_x = self.wind.r_min
             else:
@@ -182,11 +182,6 @@ class QSOSED:
         else:
             return 100
 
-    def optical_depth_x_diff(self, r, z, r_0, tau_dr, rho_shielding):
-
-        if (r < r_0):
-            return rho_shielding * self.opacity_x_r(r)
-
     def optical_depth_x(self, r, z, r_0, tau_dr, tau_dr_0, rho_shielding):
         """
         X-Ray optical depth at a distance d.
@@ -202,23 +197,23 @@ class QSOSED:
         Returns:
             X-Ray optical depth at the point (r,z)
         """
-        tau_x = self.wind.tau_dr_shielding
-        tantheta = z / r
-        d = np.sqrt(r**2 + z**2)
-        if (r <= self.r_x):
-            tau_x = tau_x * np.sqrt(r**2 + z**2)
-        else:
-            dp = self.r_x * np.sqrt(1 + tantheta**2)
-            dp2 = d - dp
-            tau_x = tau_x * (dp + 100 * dp2)
-        #tau_x_0 = self.r_x - self.r_in
-        # if (self.r_x < r_0):
-        #    tau_x_0 += 100 * (r_0 - self.r_x)
-        #distance = np.sqrt(r ** 2 + z ** 2)
-        #sec_theta = distance / r
-        #delta_r = abs(r - r_0)
-        # tau_x = sec_theta * (tau_dr_0 * tau_x_0 + tau_dr *
-        #                     self.opacity_x_r(r) * delta_r)
+        #tau_x = self.wind.tau_dr_shielding
+        #tantheta = z / r
+        #d = np.sqrt(r**2 + z**2)
+        #if (r <= self.r_x):
+        #    tau_x = tau_x * d 
+        #else:
+        #    dp = self.r_x * np.sqrt(1 + tantheta**2)
+        #    dp2 = d - dp
+        #    tau_x = tau_x * (dp + 100 * dp2)
+        tau_x_0 = self.r_x - self.r_in
+        if (self.r_x < r_0):
+            tau_x_0 += 100 * (r_0 - self.r_x)
+        distance = np.sqrt(r ** 2 + z ** 2)
+        sec_theta = distance / r
+        delta_r = abs(r - r_0)
+        tau_x = sec_theta * (tau_dr_0 * tau_x_0 + tau_dr *
+                             self.opacity_x_r(r) * delta_r)
         assert tau_x >= 0, "X-Ray optical depth cannot be negative!"
         tau_x = min(tau_x, 50)
         return tau_x
@@ -290,9 +285,6 @@ class QSOSED:
         Returns:
             fm : force multiplier.
         """
-        #XI_UPPER_LIM = 4e4
-        # if (xi > XI_UPPER_LIM):
-        #    return 0
         TAU_MAX_TOL = 0.001
         k = self.force_multiplier_k(xi)
         eta_max = self.force_multiplier_eta_max(xi)
@@ -328,7 +320,7 @@ class QSOSED:
             i_aux = np.array(i_aux) * self.sed_class.uv_fraction
         else:
             i_aux = aux_numba.integration_quad(
-                r, z, tau_dr, self.wind.r_min, self.wind.r_max)
+                r, z, 0, 0, self.r_in, self.wind.r_min, self.wind.r_max)
             self.int_hist.append(i_aux)
 
         # try:
@@ -343,7 +335,7 @@ class QSOSED:
         #force_r = (i_aux[0][0] + fm * i_aux[0][1]) * abs_uv * self.force_radiation_constant
         #force_z = (i_aux[1][0] + fm * i_aux[1][1]) * abs_uv * self.force_radiation_constant
         #force = [force_r, 0., force_z]
-        #abs_uv = np.exp(-tau_uv)
-        force = (1 + fm) * self.force_radiation_constant * \
+        abs_uv = np.exp(-tau_uv)
+        force = abs_uv * (1 + fm) * self.force_radiation_constant * \
             np.asarray([i_aux[0], 0., i_aux[1]])
         return force
