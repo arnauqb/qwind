@@ -35,7 +35,7 @@ def accretion_rate(m, mdot):
     acc = lumin / (0.06 * constants.c**2)
     return acc
 
-def pcolormesh_sensible(x_range, y_range, data, ax, logx = True, logy=True, cmap = "viridis", vmin = None, vmax = None, logNorm = True):
+def pcolormesh_sensible(x_range, y_range, data, ax, logx = True, logy=True, cmap = "viridis", vmin = None, vmax = None, logNorm = True, contour_plot=False, n_contours = 4):
     cmap = plt.get_cmap(cmap)
     if(logx):
         x_range_log = np.log10(x_range)
@@ -64,18 +64,21 @@ def pcolormesh_sensible(x_range, y_range, data, ax, logx = True, logy=True, cmap
      
     if ((vmin is not None) or (vmax is not None)):
         if (logNorm is True):
-            cmap = ax.pcolormesh(x_range_plot, y_range_plot, np.transpose(data), cmap = cmap, norm = LogNorm(vmin = vmin, vmax = vmax))
+            cmap = ax.pcolormesh(x_range_plot, y_range_plot, np.transpose(data), cmap = cmap, norm = LogNorm(vmin = vmin, vmax = vmax), rasterized=True)
         else:
-            cmap = ax.pcolormesh(x_range_plot, y_range_plot, np.transpose(data), cmap = cmap, vmin = vmin, vmax = vmax)
+            cmap = ax.pcolormesh(x_range_plot, y_range_plot, np.transpose(data), cmap = cmap, vmin = vmin, vmax = vmax, rasterized=True)
     else:
         if (logNorm is True):
-            cmap = ax.pcolormesh(x_range_plot, y_range_plot, np.transpose(data), cmap = cmap, norm = LogNorm())
+            cmap = ax.pcolormesh(x_range_plot, y_range_plot, np.transpose(data), cmap = cmap, norm = LogNorm(), rasterized=True)
         else:
-            cmap = ax.pcolormesh(x_range_plot, y_range_plot, np.transpose(data), cmap = cmap)
+            cmap = ax.pcolormesh(x_range_plot, y_range_plot, np.transpose(data), cmap = cmap, rasterized=True)
     if(logx):
         ax.set_xscale('log')
     if(logy):
         ax.set_yscale('log')
+    if contour_plot:
+        CS = ax.contour(10**x_range_log, 10**y_range_log, data.T, n_contours, colors='maroon', linewidths = 1)
+        ax.clabel(CS, inline=1, fontsize=10, fmt="%.0e")
     return cmap
     
 def read_data(grid_folder):
@@ -107,7 +110,7 @@ def read_data(grid_folder):
 
     return data_pd
 
-def plot_mloss_grid(grid_folder, title = "Wind mass loss.", ax = None, logx=True, logy=True, show_msun = False, cmap = "plasma", vmin = None, vmax = None):
+def plot_mloss_grid(grid_folder, title = "Wind mass loss.", ax = None, logx=True, logy=True, show_msun = False, cmap = "plasma", vmin = None, vmax = None, logNorm = True):
     """
     Reads data and creates mloss grid.
     """
@@ -119,9 +122,9 @@ def plot_mloss_grid(grid_folder, title = "Wind mass loss.", ax = None, logx=True
     if ax is None:
         fig, ax = plt.subplots(figsize = (15,10))
     if ((vmin is not None) or (vmax is not None)):
-        cmap = pcolormesh_sensible(M_range, mdot_range, data_grid, ax, logx=logx, logy=logy, cmap = cmap, vmin = vmin, vmax = vmax)
+        cmap = pcolormesh_sensible(M_range, mdot_range, data_grid, ax, logx=logx, logy=logy, cmap = cmap, vmin = vmin, vmax = vmax, logNorm=logNorm)
     else:
-        cmap = pcolormesh_sensible(M_range, mdot_range, data_grid, ax, logx = logx, logy=logy, cmap = cmap)
+        cmap = pcolormesh_sensible(M_range, mdot_range, data_grid, ax, logx = logx, logy=logy, cmap = cmap, logNorm=logNorm)
     if show_msun:
         for i in range(len(M_range)):
             for j in range(len(mdot_range)):

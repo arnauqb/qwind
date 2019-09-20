@@ -243,34 +243,34 @@ def integration_quad_nointerp(r, z, r_min, r_max):
 
 
 @jit_integrand
-def _integrate_dblquad_kernel_r(mu, r_d, r, z):
+def _integrate_dblquad_kernel_r(phi_d, r_d, r, z):
     ff0 = (1. - np.sqrt(6. / r_d)) / r_d ** 2.
-    #delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
-    delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * mu
-    jacob = 1 / np.sqrt(1-mu**2)
-    cos_gamma = (r - r_d * mu) / delta**2.
-    ff = ff0 * cos_gamma * jacob
+    delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
+    #delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * mu
+    #jacob = 1 / np.sqrt(1-mu**2)
+    cos_gamma = (r - r_d * np.cos(phi_d)) / delta**2.
+    ff = ff0 * cos_gamma #* jacob
     return ff
 
 
 @jit_integrand
-def _integrate_dblquad_kernel_z(mu, r_d, r, z):
+def _integrate_dblquad_kernel_z(phi_d, r_d, r, z):
     ff0 = (1. - np.sqrt(6. / r_d)) / r_d ** 2.
-    #delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
-    delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * mu
-    jacob = 1 / np.sqrt(1-mu**2)
-    ff = ff0 * 1. / delta**2. * jacob
+    delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
+    #delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * mu
+    #jacob = 1 / np.sqrt(1-mu**2)
+    ff = ff0 * 1. / delta**2. #* jacob
     return ff
 
 
 @jit()
 def qwind_integration_dblquad(r, z, Rmin, Rmax):
     r_int, r_error = scipy.integrate.nquad(
-        _integrate_dblquad_kernel_r, ((0, 1), (Rmin, Rmax)), args=(r, z),
-        opts = [{'points' : [1]}, {'points': [r]}])
+        _integrate_dblquad_kernel_r, ((0, np.pi), (Rmin, Rmax)), args=(r, z),
+        opts = [{'points' : [0]}, {'points': [r]}])
     z_int, z_error = scipy.integrate.nquad(
-        _integrate_dblquad_kernel_z, ((0, 1), (Rmin, Rmax)), args=(r, z),
-        opts = [{'points' : [1]}, {'points': [r]}])
+        _integrate_dblquad_kernel_z, ((0, np.pi), (Rmin, Rmax)), args=(r, z),
+        opts = [{'points' : [0]}, {'points': [r]}])
     r_int = 2. * z * r_int
     z_int = 2. * z**2 * z_int
     return [r_int, z_int, r_error, z_error]

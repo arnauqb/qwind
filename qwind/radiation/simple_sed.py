@@ -191,7 +191,7 @@ class SimpleSED:
         """
         tau_x_0 = self.r_x - self.r_init
         if (self.r_x < r_0):
-            tau_x_0 += 100 * (r_0 - self.r_x)
+            tau_x_0 += max(100 * (r_0 - self.r_x),0)
         distance = np.sqrt(r ** 2 + z ** 2)
         sec_theta = distance / r
         delta_r = abs(r - r_0)
@@ -227,15 +227,15 @@ class SimpleSED:
         Returns:
             Factor eta_max in the force multiplier formula.
         """
-        #if("interp_fm" in self.wind.modes):
-        eta_max = 10**(self.log_etamax_interpolator(np.log10(xi))) 
-        #else:
-        #    if(np.log10(xi) < 0.5):
-        #        aux = 6.9 * np.exp(0.16 * xi**(0.4))
-        #        eta_max = 10**aux
-        #    else:
-        #        aux = 9.1 * np.exp(-7.96e-3 * xi)
-        #        eta_max = 10**aux
+        if("interp_fm" in self.wind.modes):
+            eta_max = 10**(self.log_etamax_interpolator(np.log10(xi))) 
+        else:
+            if(np.log10(xi) < 0.5):
+                aux = 6.9 * np.exp(0.16 * xi**(0.4))
+                eta_max = 10**aux
+            else:
+                aux = 9.1 * np.exp(-7.96e-3 * xi)
+                eta_max = 10**aux
         assert eta_max >= 0, "Eta Max cannot be negative!"
         return eta_max
 
@@ -303,13 +303,15 @@ class SimpleSED:
         elif('old_quad' in self.wind.modes):
             i_aux = aux_numba.qwind_integration_dblquad(
                 r, z, self.wind.r_min, self.wind.r_max)
-        elif('dbl_quad' in self.wind.modes):
+        elif('quad' in self.wind.modes):
+            i_aux = aux_numba.integration_quad_nointerp(
+                r, z, self.wind.r_min, self.wind.r_max)
+        else:
             i_aux = aux_numba.qwind_integration_dblquad(r,z, self.wind.r_min, self.wind.r_max)
             error = i_aux[2:4]
             self.int_error_hist.append(error)
-        else:
-            i_aux = aux_numba.integration_quad_nointerp(
-                r, z, self.wind.r_min, self.wind.r_max)
+        #    i_aux = aux_numba.integration_quad_nointerp(
+        #        r, z, self.wind.r_min, self.wind.r_max)
 
         self.int_hist.append(i_aux)
         abs_uv = np.exp(-tau_uv)

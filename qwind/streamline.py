@@ -146,10 +146,10 @@ class streamline():
         Returns:
             rho: updated density at the current point.
         """
-        #V_Z_CRIT = 3.33e-10
-        #if(abs(self.v_z) < V_Z_CRIT):
-        #    self.rho_hist.append(self.rho)
-        #    return self.rho
+        V_Z_CRIT = 0  
+        if(self.v_z < V_Z_CRIT):
+            self.rho_hist.append(self.rho)
+            return self.rho
 
         radial = (self.d / self.r_0) ** (-2.)
         v_ratio = self.v_z_0 / self.v_T
@@ -258,7 +258,7 @@ class streamline():
         self.tau_dr = self.wind.tau_dr(self.rho)
         self.tau_eff = self.radiation.sobolev_optical_depth(self.tau_dr, self.dv_dr)
         tau_eff_max = self.tau_dr * self.d #abs(self.r - self.r_0)
-        #self.tau_eff = min(self.tau_eff, tau_eff_max) # prevent effective optical depth to grow unphyisically large.
+        self.tau_eff = min(self.tau_eff, tau_eff_max) # prevent effective optical depth to grow unphyisically large.
         self.tau_uv = self.radiation.optical_depth_uv(self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_0)
         self.tau_x = self.radiation.optical_depth_x(self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_0, self.wind.rho_shielding)
         self.xi = self.radiation.ionization_parameter(self.r,self.z, self.tau_x, self.rho)
@@ -282,6 +282,7 @@ class streamline():
         # update radiation field #
         self.update_radiation()
 
+
     def iterate(self, niter=5000):
         """
         Iterates the streamline
@@ -289,6 +290,7 @@ class streamline():
         Args:        
             niter : Number of iterations
         """
+        stalling_timer = 0
         for it in tqdm(range(0, niter)):
             self.step()
             v_esc = self.wind.v_esc(self.d)
@@ -319,3 +321,17 @@ class streamline():
             if(self.d > 3000):
                 print("out of grid \n")
                 break
+
+            # check line stalling
+            if abs(self.v_T - self.v_th) < 2.335e-5:
+                #self.r, self.phi, self.z = self.x_hist[-2]
+                #self.v_r, self.v_phi, self.v_z = self.v_hist[-2]
+                #self.x = self.x_hist[-2]
+                #self.v = self.v_hist[-2]
+                stalling_timer += 1
+                if stalling_timer == 1:
+                    self.dv_dr += 1e-5 * self.dv_dr
+                elif stalling_timer == 2:
+                    self.r += 1e-5 * self.r
+                elif stalling_timer == 3:
+                    self.v_r += 1e-5 * self.v_r

@@ -38,7 +38,7 @@ class Qwind:
                  intsteps=1,
                  nr=20,
                  save_dir="Results",
-                 radiation_mode="QSOSED",
+                 radiation_mode="SimpleSED",
                  n_cpus=1):
         """
         Parameters
