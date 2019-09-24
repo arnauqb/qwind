@@ -5,6 +5,7 @@ This module implements the streamline class, that initializes and evolves a stre
 import numpy as np
 import scipy.integrate
 from qwind import utils
+from decimal import Decimal
 from qwind import constants as const
 import pickle
 
@@ -90,8 +91,8 @@ class streamline():
         self.tau_dr_0 = self.tau_dr
         self.tau_dr_shielding = self.wind.tau_dr(self.wind.rho_shielding)
 
-        self.tau_uv = self.radiation.optical_depth_uv(self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_0)
-        self.tau_x = self.radiation.optical_depth_x(self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_0, self.wind.rho_shielding)
+        self.tau_uv = self.radiation.optical_depth_uv(self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding)
+        self.tau_x = self.radiation.optical_depth_x(self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding, self.wind.rho_shielding)
 
         self.tau_eff = 0
         self.fm = 0
@@ -145,13 +146,13 @@ class streamline():
         Returns:
             rho: updated density at the current point.
         """
-        #V_Z_CRIT = 3.33e-10
-        #if(self.v_z < V_Z_CRIT):
-        #    self.rho_hist.append(self.rho)
-        #    return self.rho
+        V_Z_CRIT = 0  
+        if(self.v_z < V_Z_CRIT):
+            self.rho_hist.append(self.rho)
+            return self.rho
 
         radial = (self.d / self.r_0) ** (-2.)
-        v_ratio = self.v_z_0 / np.linalg.norm(np.asarray(self.v)[[0,2]]) 
+        v_ratio = self.v_z_0 / self.v_T
         self.rho = self.rho_0 * radial * v_ratio
         # save to grid #
         self.rho_hist.append(self.rho)
@@ -177,7 +178,7 @@ class streamline():
         """
         # compute acceleration vector #
         fg = self.force_gravity()
-        fr = self.radiation.force_radiation(self.r, self.z, self.fm, self.tau_dr, self.tau_uv)
+        fr = self.radiation.force_radiation(self.r, self.z,  self.fm, self.tau_dr, self.tau_uv)
         self.a = fg 
         if('gravityonly' in self.wind.modes): # useful for debugging
             self.a += 0.
@@ -208,20 +209,23 @@ class streamline():
         self.x = [self.r, self.phi, self.z]
         self.v = [self.v_r, self.v_phi, self.v_z]
 
-        # compute dv_dr #
-        v2 = np.linalg.norm(np.asarray(self.v_hist[-1])[[0,2]]) #
-        self.delta_r = np.linalg.norm(np.asarray(self.x)[[0,2]] - np.asarray(self.x_hist[-1])[[0,2]])
-        self.vtot = np.linalg.norm(np.asarray(self.v)[[0,2]]) 
-        dvr = self.v_r_hist[-1] - self.v_r
-        dvz = self.v_z_hist[-1] - self.v_z
-        dvt = (self.v[0] * dvr + self.v[2] * dvz) / v2
-        if (abs(dvt) < 0.01 * v2): # catch possible round off numerical error.
-            self.dv_dr = dvt / self.delta_r
-        else:
-            self.dv_dr = (self.vtot - v2) / self.delta_r
-
         # total velocity #
         self.v_T = np.sqrt(self.v_r ** 2 + self.v_z**2)
+
+        # compute dv_dr #
+        v_T_2 = self.v_T_hist[-1] 
+        self.delta_r = np.linalg.norm(np.asarray(self.x)[[0,2]] - np.asarray(self.x_hist[-1])[[0,2]])
+        #self.vtot = np.linalg.norm(np.asarray(self.v)[[0,2]]) 
+        #dvr = self.v_r - self.v_r_hist[-1]
+        #dvz = self.v_z - self.v_z_hist[-1]
+        #dvt = (self.v[0] * dvr + self.v[2] * dvz) / v2
+        #if (abs(dvt) < 0.01 * v2): # catch possible round off numerical error.
+        #    print("hi")
+        #    self.dv_dr = dvt / self.delta_r
+        #else:
+        #    self.dv_dr = (self.vtot - v2) / self.delta_r
+        self.dv_dr = float((Decimal(self.v_T) - Decimal(v_T_2)) / Decimal(self.delta_r)) # use decimal to prevent round off error
+
 
         # finally update time #
         self.t = self.t + self.dt
@@ -240,8 +244,8 @@ class streamline():
         self.Fgrav.append(fg)
         self.Frad.append(fr)
         self.a_hist.append(self.a)
-        self.dvt_hist.append(dvt)
-        self.v2_hist.append(v2)
+        #self.dvt_hist.append(dvt)
+        #self.v2_hist.append(v2)
         self.dv_dr_hist.append(self.dv_dr)
         self.v_T_hist.append(self.v_T)
         self.t_hist.append(self.t)
@@ -253,9 +257,10 @@ class streamline():
         self.rho = self.update_density()
         self.tau_dr = self.wind.tau_dr(self.rho)
         self.tau_eff = self.radiation.sobolev_optical_depth(self.tau_dr, self.dv_dr)
-        self.tau_eff = min(self.tau_eff, self.d) # prevent effective optical depth to grow unphyisically large.
-        self.tau_uv = self.radiation.optical_depth_uv(self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_0)
-        self.tau_x = self.radiation.optical_depth_x(self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_0, self.wind.rho_shielding)
+        tau_eff_max = self.tau_dr * self.d #abs(self.r - self.r_0)
+        self.tau_eff = min(self.tau_eff, tau_eff_max) # prevent effective optical depth to grow unphyisically large.
+        self.tau_uv = self.radiation.optical_depth_uv(self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding)
+        self.tau_x = self.radiation.optical_depth_x(self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding, self.wind.rho_shielding)
         self.xi = self.radiation.ionization_parameter(self.r,self.z, self.tau_x, self.rho)
         self.fm = self.radiation.force_multiplier(self.tau_eff, self.xi)
         
@@ -277,6 +282,7 @@ class streamline():
         # update radiation field #
         self.update_radiation()
 
+
     def iterate(self, niter=5000):
         """
         Iterates the streamline
@@ -284,6 +290,7 @@ class streamline():
         Args:        
             niter : Number of iterations
         """
+        stalling_timer = 0
         for it in tqdm(range(0, niter)):
             self.step()
             v_esc = self.wind.v_esc(self.d)
@@ -314,3 +321,17 @@ class streamline():
             if(self.d > 3000):
                 print("out of grid \n")
                 break
+
+            # check line stalling
+            if abs(self.v_T - self.v_th) < 2.335e-5:
+                #self.r, self.phi, self.z = self.x_hist[-2]
+                #self.v_r, self.v_phi, self.v_z = self.v_hist[-2]
+                #self.x = self.x_hist[-2]
+                #self.v = self.v_hist[-2]
+                stalling_timer += 1
+                if stalling_timer == 1:
+                    self.dv_dr += 1e-5 * self.dv_dr
+                elif stalling_timer == 2:
+                    self.r += 1e-5 * self.r
+                elif stalling_timer == 3:
+                    self.v_r += 1e-5 * self.v_r
