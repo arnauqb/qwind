@@ -210,10 +210,10 @@ class SimpleSED:
         Returns:
             Factor k in the force multiplier formula.
         """
-        #if "interp_fm" in self.wind.modes:
-        k = self.k_interpolator(np.log10(xi))
-        #else:
-        #    k = 0.03 + 0.385 * np.exp(-1.4 * xi**(0.6))
+        if "analytical_fm" in self.wind.modes:
+            k = 0.03 + 0.385 * np.exp(-1.4 * xi**(0.6))
+        else:
+            k = self.k_interpolator(np.log10(xi))
         assert k >= 0, "k cannot be negative!"
         return k
 
@@ -227,15 +227,15 @@ class SimpleSED:
         Returns:
             Factor eta_max in the force multiplier formula.
         """
-        if("interp_fm" in self.wind.modes):
-            eta_max = 10**(self.log_etamax_interpolator(np.log10(xi))) 
-        else:
+        if "analytical_fm" in self.wind.modes:
             if(np.log10(xi) < 0.5):
                 aux = 6.9 * np.exp(0.16 * xi**(0.4))
                 eta_max = 10**aux
             else:
                 aux = 9.1 * np.exp(-7.96e-3 * xi)
                 eta_max = 10**aux
+        else:
+            eta_max = 10**(self.log_etamax_interpolator(np.log10(xi))) 
         assert eta_max >= 0, "Eta Max cannot be negative!"
         return eta_max
 
@@ -315,8 +315,13 @@ class SimpleSED:
 
         self.int_hist.append(i_aux)
         abs_uv = np.exp(-tau_uv)
-        constant = abs_uv * (1 + fm) * self.force_radiation_constant
-        force = constant * np.asarray([i_aux[0], 0., i_aux[1]])
+        constant = (1 + fm) * self.force_radiation_constant
+        #d = np.sqrt(r**2 + z**2)
+        #cost = z / d
+        #sint = r / d
+        force = constant * abs_uv * np.asarray([i_aux[0],
+                                        0.,
+                                        i_aux[1]])
         if return_error:
             error = constant * np.array(error)
             return [force, error]

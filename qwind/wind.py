@@ -190,7 +190,7 @@ class Qwind:
         return tau_dr
 
     def line(self,
-             r_0=375.,
+             r_0="ss",
              z_0=10.,
              rho_0=2e8,
              T=2e6,
