@@ -74,14 +74,15 @@ class QSOSED:
         self.k_interpolator = interpolate.interp1d(
             k_interp_xi_values,
             k_interp_k_values,
-            bounds_error = False,
+            bounds_error=False,
             fill_value=(k_interp_k_values[0], k_interp_k_values[-1]),
             kind='linear')  # important! xi is log here
         self.log_etamax_interpolator = interpolate.interp1d(
             etamax_interp_xi_values,
             etamax_interp_etamax_values,
-            bounds_error = False,
-            fill_value=(etamax_interp_etamax_values[0], etamax_interp_etamax_values[-1]),
+            bounds_error=False,
+            fill_value=(
+                etamax_interp_etamax_values[0], etamax_interp_etamax_values[-1]),
             kind='linear')  # important! xi is log here
 
     def optical_depth_uv(self, r, z, r_0, tau_dr, tau_dr_0):
@@ -181,11 +182,6 @@ class QSOSED:
             return 1
         else:
             return 100
-
-    def optical_depth_x_diff(self, r, z, r_0, tau_dr, rho_shielding):
-
-        if (r < r_0):
-            return rho_shielding * self.opacity_x_r(r)
 
     def optical_depth_x(self, r, z, r_0, tau_dr, tau_dr_0, rho_shielding):
         """
@@ -290,9 +286,6 @@ class QSOSED:
         Returns:
             fm : force multiplier.
         """
-        #XI_UPPER_LIM = 4e4
-        # if (xi > XI_UPPER_LIM):
-        #    return 0
         TAU_MAX_TOL = 0.001
         k = self.force_multiplier_k(xi)
         eta_max = self.force_multiplier_eta_max(xi)
@@ -320,7 +313,7 @@ class QSOSED:
         Returns:
             radiation force at the point (r,z) boosted by fm and attenuated by e^tau_uv.
         """
-        
+
         if("constant_uv" in self.wind.modes):
             i_aux = aux_numba.integration_quad_nointerp(
                 r, z, tau_dr, self.wind.r_min, self.wind.r_max)
@@ -328,7 +321,7 @@ class QSOSED:
             i_aux = np.array(i_aux) * self.sed_class.uv_fraction
         else:
             i_aux = aux_numba.integration_quad(
-                r, z, tau_dr, self.wind.r_min, self.wind.r_max)
+                r, z, self.wind.tau_dr_shielding, self.wind.r_min, self.wind.r_max)
             self.int_hist.append(i_aux)
 
         # try:
