@@ -72,9 +72,18 @@ class QSOSED:
                                        2.73, 2.00, 1.58, 1.20, 0.78]
 
         self.k_interpolator = interpolate.interp1d(
-            k_interp_xi_values, k_interp_k_values, fill_value="extrapolate", kind='cubic')  # important! xi is log here
+            k_interp_xi_values,
+            k_interp_k_values,
+            bounds_error=False,
+            fill_value=(k_interp_k_values[0], k_interp_k_values[-1]),
+            kind='linear')  # important! xi is log here
         self.log_etamax_interpolator = interpolate.interp1d(
-            etamax_interp_xi_values, etamax_interp_etamax_values, fill_value="extrapolate", kind='cubic')  # important! xi is log here
+            etamax_interp_xi_values,
+            etamax_interp_etamax_values,
+            bounds_error=False,
+            fill_value=(
+                etamax_interp_etamax_values[0], etamax_interp_etamax_values[-1]),
+            kind='linear')  # important! xi is log here
 
     def optical_depth_uv(self, r, z, r_0, tau_dr, tau_dr_0):
         """
@@ -174,11 +183,6 @@ class QSOSED:
         else:
             return 100
 
-    def optical_depth_x_diff(self, r, z, r_0, tau_dr, rho_shielding):
-
-        if (r < r_0):
-            return rho_shielding * self.opacity_x_r(r)
-
     def optical_depth_x(self, r, z, r_0, tau_dr, tau_dr_0, rho_shielding):
         """
         X-Ray optical depth at a distance d.
@@ -226,7 +230,7 @@ class QSOSED:
             Factor k in the force multiplier formula.
         """
         if "interp_fm" in self.wind.modes:
-            k = self.k_interpolator(np.log10(xi)) + 0.03
+            k = self.k_interpolator(np.log10(xi))
         else:
             k = 0.03 + 0.385 * np.exp(-1.4 * xi**(0.6))
         assert k >= 0, "k cannot be negative!"
@@ -243,7 +247,7 @@ class QSOSED:
             Factor eta_max in the force multiplier formula.
         """
         if("interp_fm" in self.wind.modes):
-            eta_max = 10**(self.log_etamax_interpolator(np.log10(xi))) + 1
+            eta_max = 10**(self.log_etamax_interpolator(np.log10(xi)))
         else:
             if(np.log10(xi) < 0.5):
                 aux = 6.9 * np.exp(0.16 * xi**(0.4))
@@ -282,9 +286,6 @@ class QSOSED:
         Returns:
             fm : force multiplier.
         """
-        #XI_UPPER_LIM = 4e4
-        # if (xi > XI_UPPER_LIM):
-        #    return 0
         TAU_MAX_TOL = 0.001
         k = self.force_multiplier_k(xi)
         eta_max = self.force_multiplier_eta_max(xi)
@@ -299,7 +300,7 @@ class QSOSED:
         assert fm >= 0, "Force multiplier cannot be negative!"
         return fm
 
-    def force_radiation(self, r, z, fm, tau_dr):
+    def force_radiation(self, r, z, fm, tau_dr, tau_uv):
         """
         Computes the radiation force at the point (r,z)
 
@@ -320,7 +321,7 @@ class QSOSED:
             i_aux = np.array(i_aux) * self.sed_class.uv_fraction
         else:
             i_aux = aux_numba.integration_quad(
-                r, z, tau_dr, self.wind.r_min, self.wind.r_max)
+                r, z, self.wind.tau_dr_shielding, self.wind.r_min, self.wind.r_max)
             self.int_hist.append(i_aux)
 
         # try:

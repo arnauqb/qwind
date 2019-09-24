@@ -38,7 +38,7 @@ class Qwind:
                  intsteps=1,
                  nr=20,
                  save_dir="Results",
-                 radiation_mode="QSOSED",
+                 radiation_mode="SimpleSED",
                  n_cpus=1):
         """
         Parameters
@@ -190,7 +190,7 @@ class Qwind:
         return tau_dr
 
     def line(self,
-             r_0=375.,
+             r_0="ss",
              z_0=10.,
              rho_0=2e8,
              T=2e6,
@@ -231,7 +231,7 @@ class Qwind:
             dt=dt
         )
 
-    def start_lines(self, v_z_0=1e7, niter=5000, rho = None):
+    def start_lines(self, v_z_0=1e7, niter=5000, rho = None, z_0 = 10):
         """
         Starts and evolves a set of equally spaced streamlines.
 
@@ -261,7 +261,7 @@ class Qwind:
                 v_z_0 = v_z_0
             if(rho is None):
                 rho = self.density_ss(r)
-            self.lines.append(self.line(r_0=r, v_z_0=v_z_0, rho_0 = rho ))
+            self.lines.append(self.line(r_0=r, v_z_0=v_z_0, rho_0 = rho, z_0 = z_0 ))
         i = 0
         if(self.n_cpus == 1):
             for line in self.lines:
