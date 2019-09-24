@@ -9,18 +9,19 @@ import numpy as np
 
 # basic physical constants #
 G = astroconst.G.cgs.value
-Ms = astroconst.M_sun.cgs.value
-c = astroconst.c.cgs.value
-m_p = astroconst.m_p.cgs.value
-k_B = astroconst.k_B.cgs.value
-Ryd = u.astrophys.Ry.cgs.scale
-sigma_sb = astroconst.sigma_sb.cgs.value
-sigma_t = const.physical_constants['Thomson cross section'][0] * 1e4
-year = u.yr.cgs.scale
+M_SUN = astroconst.M_sun.cgs.value
+C = astroconst.c.cgs.value
+M_P = astroconst.m_p.cgs.value
+K_B = astroconst.k_B.cgs.value
+RYD = u.astrophys.Ry.cgs.scale
+SIGMA_SB = astroconst.sigma_sb.cgs.value
+SIGMA_T = const.physical_constants['Thomson cross section'][0] * 1e4
+YEAR_TO_SEC = u.yr.cgs.scale
+PI = np.pi
 
 # useful normalization factors #
-ionization_parameter_critical = 1e5  # / 8.2125
-emissivity_constant = 4 * np.pi * m_p * c**3 / sigma_t
+IONIZATION_PARAMETER_CRITICAL = 1e5  # / 8.2125
+EMISSIVITY_CONSTANT = 4 * PI * M_P * C**3 / SIGMA_T
 
 
 def convert_units(value, current_unit, new_unit):

@@ -7,7 +7,7 @@ from scipy import integrate, interpolate, optimize
 
 import qwind.constants as const
 from pyagn import sed
-from qwind import aux_numba
+from qwind import integration 
 #from qwind.compiled_functions import *
 
 
@@ -19,61 +19,62 @@ class SimpleSED:
 
     def __init__(self, wind):
         self.wind = wind
-        self.r_in = self.wind.r_in
-        self.r_out = self.wind.r_out
-        self.dr = (self.r_out - self.r_in) / (self.wind.nr - 1)
-        self.r_init = self.r_in + 0.5 * self.dr
+        self.lines_r_min = self.wind.lines_r_min
+        self.lines_r_max = self.wind.lines_r_max
+        self.dr = (self.lines_r_max - self.lines_r_min) / (self.wind.nr - 1)
+        self.r_init = self.lines_r_min + 0.5 * self.dr
         self.wind.tau_dr_0 = self.wind.tau_dr(self.wind.rho_shielding)
         self.sed_class = sed.SED(
-            M=wind.M / const.Ms,
+            M=wind.M / const.M_SUN,
             mdot=wind.mdot,
             astar=wind.spin,
-            number_bins_fractions = 100,
-            )
+            number_bins_fractions=100,
+        )
         self.uv_fraction = self.sed_class.uv_fraction
         self.xray_fraction = self.sed_class.xray_fraction
         self.xray_luminosity = self.wind.mdot * \
             self.wind.eddington_luminosity * self.xray_fraction
         self.r_x = self.ionization_radius()
-        self.force_radiation_constant = 3. * self.wind.mdot / \
+        self.FORCE_RADIATION_CONSTANT = 3. * self.wind.mdot / \
             (8. * np.pi * self.wind.eta) * self.uv_fraction
         self.int_hist = []
         self.int_error_hist = []
 
         # interpolation values for force multiplier #
-        k_interp_xi_values = [-4, -3, -2.26, -2.00, -1.50, -1.00,
+        K_INTERP_XI_VALUES = [-4, -3, -2.26, -2.00, -1.50, -1.00,
                               -0.42, 0.00, 0.22, 0.50, 1.0,
                               1.5, 1.8, 2.0, 2.18, 2.39,
                               2.76, 3.0, 3.29, 3.51, 3.68, 4.0]
-        k_interp_k_values = [0.411, 0.411, 0.400, 0.395, 0.363, 0.300,
+        K_INTERP_K_VALUES = [0.411, 0.411, 0.400, 0.395, 0.363, 0.300,
                              0.200, 0.132, 0.100, 0.068, 0.042,
                              0.034, 0.033, 0.021, 0.013, 0.048,
                              0.046, 0.042, 0.044, 0.045, 0.032,
                              0.013]
-        etamax_interp_xi_values = [-3, -2.5, -2.00, -1.50, -1.00,
+        ETAMAX_INTERP_XI_VALUES = [-3, -2.5, -2.00, -1.50, -1.00,
                                    -0.5, -0.23, 0.0, 0.32, 0.50,
                                    1.0, 1.18, 1.50, 1.68, 2.0,
                                    2.02, 2.16, 2.25, 2.39, 2.79,
                                    3.0, 3.32, 3.50, 3.75, 4.00]
 
-        etamax_interp_etamax_values = [6.95, 6.95, 6.98, 7.05, 7.26,
+        ETAMAX_INTERP_ETAMAX_VALUES = [6.95, 6.95, 6.98, 7.05, 7.26,
                                        7.56, 7.84, 8.00, 8.55, 8.95,
                                        8.47, 8.00, 6.84, 6.00, 4.32,
                                        4.00, 3.05, 2.74, 3.00, 3.10,
                                        2.73, 2.00, 1.58, 1.20, 0.78]
         self.k_interpolator = interpolate.interp1d(
-            k_interp_xi_values,
-            k_interp_k_values,
+            K_INTERP_XI_VALUES,
+            K_INTERP_K_VALUES,
             bounds_error=False,
-            fill_value=(k_interp_k_values[0], k_interp_k_values[-1]),
+            fill_value=(K_INTERP_K_VALUES[0], K_INTERP_K_VALUES[-1]),
             kind='cubic')  # important! xi is log here
         self.log_etamax_interpolator = interpolate.interp1d(
-            etamax_interp_xi_values, 
-            etamax_interp_etamax_values,
+            ETAMAX_INTERP_XI_VALUES,
+            ETAMAX_INTERP_ETAMAX_VALUES,
             bounds_error=False,
-            fill_value=(etamax_interp_etamax_values[0], etamax_interp_etamax_values[-1]),
+            fill_value=(
+                ETAMAX_INTERP_ETAMAX_VALUES[0],
+                ETAMAX_INTERP_ETAMAX_VALUES[-1]),
             kind='cubic')  # important! xi is log here
-
 
     def optical_depth_uv(self, r, z, r_0, tau_dr, tau_dr_0):
         """
@@ -115,7 +116,7 @@ class SimpleSED:
         distance_2 = r**2. + z**2.
         xi = self.xray_luminosity * \
             np.exp(-tau_x) / (rho_shielding *
-                              distance_2 * self.wind.Rg**2)  # / 8.2125
+                              distance_2 * self.wind.RG**2)  # / 8.2125
         assert xi > 0, "Ionization parameter cannot be negative!"
         xi += 1e-20  # to avoid overflow
         return xi
@@ -130,9 +131,9 @@ class SimpleSED:
         Returns:
             difference between current ion. parameter and target one.
         """
-        tau_x = max(min(self.wind.tau_dr_0 * (rx - self.r_in),50),0)
+        tau_x = max(min(self.wind.tau_dr_0 * (rx - self.lines_r_min), 50), 0)
         xi = self.ionization_parameter(rx, 0, tau_x, self.wind.rho_shielding)
-        ionization_difference = const.ionization_parameter_critical - xi
+        ionization_difference = const.IONIZATION_PARAMETER_CRITICAL - xi
         return ionization_difference
 
     def ionization_radius(self):
@@ -141,20 +142,20 @@ class SimpleSED:
         """
         try:
             r_x = optimize.root_scalar(
-                    self.ionization_radius_kernel,
-                    bracket=[self.wind.r_min, self.wind.r_max])
+                self.ionization_radius_kernel,
+                bracket=[self.wind.disk_r_min, self.wind.disk_r_max])
         except:
             print("ionization radius outside the disc.")
-            if(self.ionization_radius_kernel(self.wind.r_min) > 0):
+            if(self.ionization_radius_kernel(self.wind.disk_r_min) > 0):
                 print("ionization radius is below r_min, nothing is ionized.")
-                r_x = self.wind.r_min
+                r_x = self.wind.disk_r_min
                 return r_x
             else:
                 print(
                     "ionization radius is very large, atmosphere is completely ionized.")
                 r_x = self.wind.r_max
                 return r_x
-        assert r_x.converged == True
+        assert r_x.converged is True
         r_x = r_x.root
         assert r_x > 0, "Got non physical ionization radius!"
         return r_x
@@ -191,11 +192,12 @@ class SimpleSED:
         """
         tau_x_0 = self.r_x - self.r_init
         if (self.r_x < r_0):
-            tau_x_0 += max(100 * (r_0 - self.r_x),0)
+            tau_x_0 += max(100 * (r_0 - self.r_x), 0)
         distance = np.sqrt(r ** 2 + z ** 2)
         sec_theta = distance / r
         delta_r = abs(r - r_0)
-        tau_x = sec_theta * (tau_dr_0 * tau_x_0 + tau_dr * self.opacity_x_r(r) * delta_r)
+        tau_x = sec_theta * (tau_dr_0 * tau_x_0 + tau_dr *
+                             self.opacity_x_r(r) * delta_r)
         tau_x = min(tau_x, 50)
         assert tau_x >= 0, "X-Ray optical depth cannot be negative!"
         return tau_x
@@ -235,7 +237,7 @@ class SimpleSED:
                 aux = 9.1 * np.exp(-7.96e-3 * xi)
                 eta_max = 10**aux
         else:
-            eta_max = 10**(self.log_etamax_interpolator(np.log10(xi))) 
+            eta_max = 10**(self.log_etamax_interpolator(np.log10(xi)))
         assert eta_max >= 0, "Eta Max cannot be negative!"
         return eta_max
 
@@ -284,7 +286,7 @@ class SimpleSED:
         assert fm >= 0, "Force multiplier cannot be negative!"
         return fm
 
-    def force_radiation(self, r, z, fm, tau_dr, tau_uv, return_error = False):
+    def force_radiation(self, r, z, fm, tau_dr, tau_uv, return_error=False):
         """
         Computes the radiation force at the point (r,z)
 
@@ -298,30 +300,22 @@ class SimpleSED:
             radiation force at the point (r,z) boosted by fm and attenuated by e^tau_uv.
         """
 
-        if('old_integral' in self.wind.modes):
-            i_aux = aux_numba.qwind_integration(r, z)
-        elif('old_quad' in self.wind.modes):
-            i_aux = aux_numba.qwind_integration_dblquad(
-                r, z, self.wind.r_min, self.wind.r_max)
-        elif('quad' in self.wind.modes):
-            i_aux = aux_numba.integration_quad_nointerp(
-                r, z, self.wind.r_min, self.wind.r_max)
-        else:
-            i_aux = aux_numba.qwind_integration_dblquad(r,z, self.wind.r_min, self.wind.r_max)
-            error = i_aux[2:4]
-            self.int_error_hist.append(error)
+        i_aux = integration.qwind_integration_dblquad(
+            r, z, self.wind.disk_r_min, self.wind.disk_r_max)
+        error = i_aux[2:4]
+        self.int_error_hist.append(error)
         #    i_aux = aux_numba.integration_quad_nointerp(
         #        r, z, self.wind.r_min, self.wind.r_max)
 
         self.int_hist.append(i_aux)
         abs_uv = np.exp(-tau_uv)
-        constant = (1 + fm) * self.force_radiation_constant
+        constant = (1 + fm) * self.FORCE_RADIATION_CONSTANT
         #d = np.sqrt(r**2 + z**2)
         #cost = z / d
         #sint = r / d
         force = constant * abs_uv * np.asarray([i_aux[0],
-                                        0.,
-                                        i_aux[1]])
+                                                0.,
+                                                i_aux[1]])
         if return_error:
             error = constant * np.array(error)
             return [force, error]

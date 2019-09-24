@@ -1,5 +1,5 @@
 """
-This module handles the radiation transfer aspects of Qwind.
+IN DEVELOPMENT.
 """
 
 import numpy as np
@@ -142,7 +142,7 @@ class QSOSED:
         """
         tau_x = self.wind.tau_dr_0 * (rx - self.r_in)
         xi = self.ionization_parameter(rx, 0, tau_x, self.wind.rho_shielding)
-        ionization_difference = const.ionization_parameter_critical - xi
+        ionization_difference = const.IONIZATION_PARAMETER_CRITICAL - xi
         return ionization_difference
 
     def ionization_radius(self):
@@ -163,7 +163,7 @@ class QSOSED:
                     "ionization radius is very large, atmosphere is completely ionized.")
                 r_x = self.wind.r_max
             return r_x
-        assert r_x.converged == True
+        assert r_x.converged is True
         r_x = r_x.root
         assert r_x > 0, "Got non physical ionization radius!"
         return r_x

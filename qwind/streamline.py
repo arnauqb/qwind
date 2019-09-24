@@ -69,15 +69,16 @@ class streamline():
         self.t = 0  # in seconds
         self.r_0 = r_0
         self.z_0 = z_0
-        self.v_r = v_r_0 / const.c   
+        self.v_r = v_r_0 / const.C
         self.v_r_hist = [self.v_r]
         self.v_phi = self.wind.v_kepler(r_0)
         self.l = self.v_phi * self.r  # initial angular momentum
         self.v_phi_0 = self.v_phi
-        self.v_z_0 = v_z_0 / const.c  
+        self.v_z_0 = v_z_0 / const.C
         self.v_z = self.v_z_0  
         self.v = [self.v_r, self.v_phi, self.v_z]
         self.v_T_0 = np.sqrt(self.v_z ** 2 + self.v_r ** 2)
+        self.v_T = self.v_T_0
         self.v_esc = self.wind.v_esc(self.d)
         self.v_esc_hist = [self.v_esc]
         self.dv_dr = 0  
@@ -146,10 +147,10 @@ class streamline():
         Returns:
             rho: updated density at the current point.
         """
-        V_Z_CRIT = 0  
-        if(self.v_z < V_Z_CRIT):
-            self.rho_hist.append(self.rho)
-            return self.rho
+        #V_Z_CRIT = 0  
+        #if(self.v_z < V_Z_CRIT):
+        #    self.rho_hist.append(self.rho)
+        #    return self.rho
 
         radial = (self.d / self.r_0) ** (-2.)
         v_ratio = self.v_z_0 / self.v_T
@@ -323,15 +324,15 @@ class streamline():
                 break
 
             # check line stalling
-            if abs(self.v_T - self.v_th) < 2.335e-5:
-                #self.r, self.phi, self.z = self.x_hist[-2]
-                #self.v_r, self.v_phi, self.v_z = self.v_hist[-2]
-                #self.x = self.x_hist[-2]
-                #self.v = self.v_hist[-2]
-                stalling_timer += 1
-                if stalling_timer == 1:
-                    self.dv_dr += 1e-5 * self.dv_dr
-                elif stalling_timer == 2:
-                    self.r += 1e-5 * self.r
-                elif stalling_timer == 3:
-                    self.v_r += 1e-5 * self.v_r
+            #if abs(self.v_T - self.v_th) < 2.335e-5:
+            #    #self.r, self.phi, self.z = self.x_hist[-2]
+            #    #self.v_r, self.v_phi, self.v_z = self.v_hist[-2]
+            #    #self.x = self.x_hist[-2]
+            #    #self.v = self.v_hist[-2]
+            #    stalling_timer += 1
+            #    if stalling_timer == 1:
+            #        self.dv_dr += 1e-5 * self.dv_dr
+            #    elif stalling_timer == 2:
+            #        self.r += 1e-5 * self.r
+            #    elif stalling_timer == 3:
+            #        self.v_r += 1e-5 * self.v_r1
