@@ -16,6 +16,8 @@ setup(
     author_email='arnau.quera-bofarull@durham.ac.uk',
     url='https://github.com/arnauq/qwind',
     license=license,
-    packages=find_packages(exclude=('tests', 'docs'))
+    packages=find_packages(exclude=('tests', 'docs')),
+    setup_requires=['pbr'],
+    pbr=True,
 )
 
