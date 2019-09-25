@@ -1,5 +1,5 @@
 Qwind: A non-hydrodynamical model of AGN line-driven winds.
-***********************************************************
+===========================================================
 
 [![Build Status](https://travis-ci.org/arnauqb/qwind.svg?branch=master)](https://travis-ci.org/arnauqb/qwind)
 
