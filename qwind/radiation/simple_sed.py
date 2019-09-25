@@ -153,7 +153,7 @@ class SimpleSED:
             else:
                 print(
                     "ionization radius is very large, atmosphere is completely ionized.")
-                r_x = self.wind.r_max
+                r_x = self.wind.disk_r_max
                 return r_x
         assert r_x.converged is True
         r_x = r_x.root
@@ -304,8 +304,6 @@ class SimpleSED:
             r, z, self.wind.disk_r_min, self.wind.disk_r_max)
         error = i_aux[2:4]
         self.int_error_hist.append(error)
-        #    i_aux = aux_numba.integration_quad_nointerp(
-        #        r, z, self.wind.r_min, self.wind.r_max)
 
         self.int_hist.append(i_aux)
         abs_uv = np.exp(-tau_uv)

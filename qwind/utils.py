@@ -33,8 +33,8 @@ def save_results(wind, folder_name="Results"):
         f.write("Mdot: \t %.2e\n" % wind.mdot)
         f.write("a: \t %.2e\n" % wind.spin)
         f.write("rho_shielding: \t %e\n" % wind.rho_shielding)
-        f.write("r_in: \t %f\n" % wind.r_in)
-        f.write("r_out: \t %f\n" % wind.r_out)
+        f.write("r_in: \t %f\n" % wind.lines_r_min)
+        f.write("r_out: \t %f\n" % wind.lines_r_max)
         f.write("f_uv: \t %f\n" % wind.radiation.uv_fraction)
         f.write("f_x: \t %f\n" % wind.radiation.xray_fraction)
 
@@ -66,7 +66,7 @@ def save_results(wind, folder_name="Results"):
         df.to_csv(lines_file, index=False)
 
         mdot_w = wind.mdot_w
-        mdot_w_msun = mdot_w / constants.Ms * 3.154e7  # yr to s
+        mdot_w_msun = mdot_w / constants.M_SUN * 3.154e7  # yr to s
         with open(os.path.join(folder_name, "mass_loss.csv"), 'w') as f:
             f.write("Wind mass loss: %e [g/s]\n" % mdot_w)
             f.write("Wind mass loss: %e [Msun/yr]" % mdot_w_msun)
