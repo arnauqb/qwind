@@ -6,9 +6,8 @@ import numpy as np
 from scipy import integrate, interpolate, optimize
 
 import qwind.constants as const
-from pyagn import sed
-from qwind import integration 
-#from qwind.compiled_functions import *
+from qwind.pyagn import sed
+from qwind import integration
 
 
 class SimpleSED:
