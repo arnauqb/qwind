@@ -27,12 +27,12 @@ import matplotlib.ticker as ticker
 mpl.rcParams.update(nice_fonts)
 
 def luminosity(m, mdot):
-    Rg = constants.G * m * constants.Ms / constants.c**2
-    return mdot * Rg * constants.emissivity_constant
+    Rg = constants.G * m * constants.M_SUN / constants.C**2
+    return mdot * Rg * constants.EMISSIVITY_CONSTANT
 
 def accretion_rate(m, mdot):
     lumin = luminosity(m,mdot)
-    acc = lumin / (0.06 * constants.c**2)
+    acc = lumin / (0.06 * constants.C**2)
     return acc
 
 def pcolormesh_sensible(x_range, y_range, data, ax, logx = True, logy=True, cmap = "viridis", vmin = None, vmax = None, logNorm = True, contour_plot=False, n_contours = 4):
@@ -96,7 +96,7 @@ def read_data(grid_folder):
             lines = f.readlines()
             mloss = float(lines[0].split(' ')[3])   
         mloss_norm = mloss / accretion_rate(M, mdot)
-        mloss_msun = mloss / constants.Ms * constants.year
+        mloss_msun = mloss / constants.M_SUN * constants.YEAR_TO_SEC
         data = {
             'M' : M,
             'mdot' : mdot,

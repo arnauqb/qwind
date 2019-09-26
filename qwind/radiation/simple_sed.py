@@ -21,8 +21,7 @@ class SimpleSED:
         self.wind = wind
         self.lines_r_min = self.wind.lines_r_min
         self.lines_r_max = self.wind.lines_r_max
-        self.dr = (self.lines_r_max - self.lines_r_min) / (self.wind.nr - 1)
-        self.r_init = self.lines_r_min + 0.5 * self.dr
+        self.r_init = self.lines_r_min
         self.wind.tau_dr_0 = self.wind.tau_dr(self.wind.rho_shielding)
         self.sed_class = sed.SED(
             M=wind.M / const.M_SUN,
