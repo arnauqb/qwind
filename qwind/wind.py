@@ -127,7 +127,7 @@ class Qwind:
         dr = (self.lines_r_max - self.lines_r_min) / (nr - 1)
         self.lines_r_range = [self.lines_r_min +
                               (i-0.5) * dr for i in range(1, nr+1)]
-        self.r_init = self.lines_r_range[0]
+        self.r_init = self.lines_r_min
 
         self.lines = []  # list of streamline objects
         self.lines_hist = []  # save all iterations info
