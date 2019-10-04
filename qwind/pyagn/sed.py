@@ -266,7 +266,7 @@ class SED:
         r :  float
              disk radius in Rg.
         """
-        bb_constant = 2 / (const.H**3 * const.C ** 2)
+        bb_constant = 2 / (const.H_PLANCK**3 * const.C ** 2)
         temperature = self.disk_temperature4(r) ** (1./4.)
         planck_spectrum_exp = np.exp(energy / (const.K_B * temperature))
         planck_spectrum = bb_constant * energy**3 * \

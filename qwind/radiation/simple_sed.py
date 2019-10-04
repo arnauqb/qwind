@@ -20,7 +20,8 @@ class SimpleSED:
         self.wind = wind
         self.lines_r_min = self.wind.lines_r_min
         self.lines_r_max = self.wind.lines_r_max
-        self.r_init = self.lines_r_min
+        self.dr = (self.lines_r_max - self.lines_r_min) / (self.wind.nr - 1)
+        self.r_init = self.lines_r_min + 0.5 * self.dr
         self.wind.tau_dr_0 = self.wind.tau_dr(self.wind.rho_shielding)
         self.sed_class = sed.SED(
             M=wind.M / const.M_SUN,
@@ -298,10 +299,13 @@ class SimpleSED:
             radiation force at the point (r,z) boosted by fm and attenuated by e^tau_uv.
         """
 
-        i_aux = integration.qwind_integration_dblquad(
-            r, z, self.wind.disk_r_min, self.wind.disk_r_max)
-        error = i_aux[2:4]
-        self.int_error_hist.append(error)
+        if('old_integral' in self.wind.modes):
+            i_aux = integration.qwind_old_integration(r, z)
+        else:
+            i_aux = integration.qwind_integration_dblquad(
+                r, z, self.wind.disk_r_min, self.wind.disk_r_max)
+            error = i_aux[2:4]
+            self.int_error_hist.append(error)
 
         self.int_hist.append(i_aux)
         abs_uv = np.exp(-tau_uv)
@@ -311,7 +315,8 @@ class SimpleSED:
         #sint = r / d
         force = constant * abs_uv * np.asarray([i_aux[0],
                                                 0.,
-                                                i_aux[1]])
+                                                i_aux[1],
+                                                ])
         if return_error:
             error = constant * np.array(error)
             return [force, error]

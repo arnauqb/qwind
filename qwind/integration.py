@@ -175,3 +175,61 @@ def qwind_integration_dblquad(r, z, disk_r_min, disk_r_max):
     r_int = 2. * z * r_int
     z_int = 2. * z**2 * z_int
     return (r_int, z_int, r_error, z_error)
+
+
+## old integral ##
+
+
+phids = np.linspace(0, np.pi, 100 + 1)
+deltaphids = np.asarray([phids[i + 1] - phids[i]
+                         for i in range(0, len(phids) - 1)])
+rds = np.geomspace(6, 1400, 250 + 1)
+deltards = np.asarray([rds[i + 1] - rds[i] for i in range(0, len(rds) - 1)])
+
+@jit(nopython=True)
+def _qwind_integral_kernel(r_d, phi_d, r, z):
+    """
+    Kernel of the radiation force integral.
+    Args:
+        r_d: disc element radial coordinate.
+        phi_d: disc element angular coordinate.
+        r: gas blob r coordinate.
+        z: gas blob z coordinate.
+    Returns:
+        array[0]: kernel for the radial integration.
+        array[1]: kernel for the z integration.
+    """
+    delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
+    cos_gamma = (r - r_d * np.cos(phi_d))
+    ff = 1. / delta ** 2.
+    return [ff * cos_gamma, ff]
+
+
+@jit(nopython=True)
+def qwind_old_integration(r, z):
+    """
+    RE2010 integration method. Faster, but poor convergence near the disc, since it is a non adaptive method.
+    Args:
+        r: gas blob radial coordinate
+        z: gas blob height coordinate
+    Returns:
+        array[0]: Result of the radial integration.
+        array[1]: Result of the z integration.
+    """
+    integral = [0., 0.]
+    for i in range(0, len(deltards)):
+        int_step = [0., 0., ]
+        deltar = deltards[i]
+        r_d = rds[i]
+        ff0 = (1. - np.sqrt(6. / r_d)) / r_d ** 2.
+        for j in range(0, len(deltaphids)):
+            phi_d = phids[j]
+            deltaphi = deltaphids[j]
+            aux = _qwind_integral_kernel(r_d, phi_d,  r, z)
+            int_step[0] += aux[0] * deltaphi
+            int_step[1] += aux[1] * deltaphi
+        integral[0] += int_step[0] * deltar * ff0
+        integral[1] += int_step[1] * deltar * ff0
+    integral[0] = 2. * z * integral[0]
+    integral[1] = 2. * z**2. * integral[1]
+    return integral

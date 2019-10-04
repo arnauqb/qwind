@@ -11,7 +11,7 @@ import numpy as np
 G = astroconst.G.cgs.value
 M_SUN = astroconst.M_sun.cgs.value
 C = astroconst.c.cgs.value
-H = astroconst.h.cgs.value
+H_PLANCK = astroconst.h.cgs.value
 M_P = astroconst.m_p.cgs.value
 K_B = astroconst.k_B.cgs.value
 RYD = u.astrophys.Ry.cgs.scale
