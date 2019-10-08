@@ -6,7 +6,9 @@ install:
     - pip install -r requirements.txt
     - pip install .
 script: 
-    - pytest --cov-report term --cov=app/test/
+    - pytest --cov-report term --cov=qwind test/
+env:
+    - CODECOV_TOKEN="c8ed4145-cb58-4179-babb-e94a4ac740c5" 
 deploy:
   skip_cleanup: true
   distributions: sdist bdist_wheel
