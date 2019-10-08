@@ -9,6 +9,7 @@ from numba import jit, jitclass
 from scipy import interpolate
 
 import qwind.constants as const
+from qwind.radiation import simple_sed
 from qwind import utils
 
 
@@ -31,6 +32,7 @@ class Qwind:
                  lines_r_max=1600,
                  disk_r_min=6.,
                  disk_r_max=1400,
+                 f_x = None,
                  T=2e6,
                  mu=1,
                  modes=[],
@@ -100,17 +102,9 @@ class Qwind:
         self.v_thermal = self.thermal_velocity(T)
         self.lines_r_min = lines_r_min
         self.lines_r_max = lines_r_max
+        self.f_x = f_x
 
-        # load radiation module
-        if (radiation_mode == "QSOSED"):
-            from qwind.radiation import qsosed
-            self.radiation = qsosed.QSOSED(self)
-        elif (radiation_mode == "SimpleSED"):
-            from qwind.radiation import simple_sed
-            self.radiation = simple_sed.SimpleSED(self)
-        else:
-            print("Unknown radiation module.")
-            sys.exit()
+        self.radiation = simple_sed.SimpleSED(self)
 
         print("disk_r_min: %f \n disk_r_max: %f" %
               (self.disk_r_min, self.disk_r_max))

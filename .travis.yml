@@ -1,11 +1,12 @@
 language: python
 python:
-- '3.6'
-- '3.7'
+    - '3.6'
+    - '3.7'
 install:
-- pip install -r requirements.txt
-- pip install .
-script: pytest
+    - pip install -r requirements.txt
+    - pip install .
+script: 
+    - pytest --cov-report term --cov=app/test/
 deploy:
   skip_cleanup: true
   distributions: sdist bdist_wheel
@@ -18,3 +19,5 @@ deploy:
     branch:
       - master
       - /(\d+\.)?(\d+\.)?(\*|\d+)$/
+after_success:
+    - codecov

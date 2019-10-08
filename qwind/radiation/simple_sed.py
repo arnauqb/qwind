@@ -6,7 +6,7 @@ import numpy as np
 from scipy import integrate, interpolate, optimize
 
 import qwind.constants as const
-from qwind.pyagn import sed
+from qsosed import sed
 from qwind import integration
 
 
@@ -23,14 +23,18 @@ class SimpleSED:
         self.dr = (self.lines_r_max - self.lines_r_min) / (self.wind.nr - 1)
         self.r_init = self.lines_r_min + 0.5 * self.dr
         self.wind.tau_dr_0 = self.wind.tau_dr(self.wind.rho_shielding)
-        self.sed_class = sed.SED(
-            M=wind.M / const.M_SUN,
-            mdot=wind.mdot,
-            astar=wind.spin,
-            number_bins_fractions=100,
-        )
-        self.uv_fraction = self.sed_class.uv_fraction
-        self.xray_fraction = self.sed_class.xray_fraction
+        if self.wind.f_x is None:
+            self.sed_class = sed.SED(
+                M=wind.M / const.M_SUN,
+                mdot=wind.mdot,
+                astar=wind.spin,
+                number_bins_fractions=100,
+            )
+            self.uv_fraction = self.sed_class.uv_fraction
+            self.xray_fraction = self.sed_class.xray_fraction
+        else:
+            self.uv_fraction = 1 - self.wind.f_x
+            self.xray_fraction = self.wind.f_x
         self.xray_luminosity = self.wind.mdot * \
             self.wind.eddington_luminosity * self.xray_fraction
         self.r_x = self.ionization_radius()
@@ -130,7 +134,7 @@ class SimpleSED:
         Returns:
             difference between current ion. parameter and target one.
         """
-        tau_x = max(min(self.wind.tau_dr_0 * (rx - self.lines_r_min), 50), 0)
+        tau_x = max(min(self.wind.tau_dr_0 * (rx - self.r_init), 50), 0)
         xi = self.ionization_parameter(rx, 0, tau_x, self.wind.rho_shielding)
         ionization_difference = const.IONIZATION_PARAMETER_CRITICAL - xi
         return ionization_difference
