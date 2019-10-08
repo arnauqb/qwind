@@ -2,6 +2,7 @@ Qwind: A non-hydrodynamical model of AGN line-driven winds.
 ===========================================================
 
 [![Build Status](https://travis-ci.org/arnauqb/qwind.svg?branch=master)](https://travis-ci.org/arnauqb/qwind)
+[![codecov](https://codecov.io/gh/arnauqb/qwind/branch/master/graph/badge.svg)](https://codecov.io/gh/arnauqb/qwind)
 
 Qwind is a code that aims to simulate the launching and acceleration phase of line-driven winds in the context of AGN accretion discs. To do that, we model the wind as a set of streamlines originating on the surface of the AGN accretion disc, and we evolve them following their equation of motion, given by the balance between radiative and gravitational force.
 
