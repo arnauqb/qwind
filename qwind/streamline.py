@@ -10,19 +10,24 @@ from qwind import constants as const
 import pickle
 
 # check backend to import appropiate progress bar #
+
+
 def tqdm_dump(array):
     return array
+
+
 backend = utils.type_of_script()
 if(backend == 'jupyter'):
     from tqdm import tqdm_notebook as tqdm
 else:
     tqdm = tqdm_dump
 
+
 class streamline():
     """
     This class represents a streamline. It inherits from the wind class all the global properties of the accretion disc, black hole and atmosphere.
     """
-    
+
     def __init__(
             self,
             radiation_class,
@@ -33,8 +38,8 @@ class streamline():
             T=2e6,
             v_z_0=1e7,
             v_r_0=0.,
-            dt = 4.096 / 10.
-            ):
+            dt=4.096 / 10.
+    ):
         """
         Args:
             radiation_class: radiation class used.
@@ -47,16 +52,16 @@ class streamline():
             v_r_0 : Initial radial velocity in units of cm/s.
             dt : Timestep in units of Rg/c.
         """
-        self.wind = wind 
+        self.wind = wind
         self.radiation = radiation_class
-        
+
         # black hole and disc variables #
         self.a = np.array([0, 0, 0])  # / u.s**2
         self.T = T  # * u.K
-        self.v_th = self.wind.thermal_velocity(self.T) 
+        self.v_th = self.wind.thermal_velocity(self.T)
         self.rho_0 = rho_0
         self.rho = self.rho_0
-        
+
         ## position variables ##
         ## coordinates of particle are (R, phi, z) ##
         ## all positions are in units of Rg, all velocities in units of c. ##
@@ -75,29 +80,32 @@ class streamline():
         self.l = self.v_phi * self.r  # initial angular momentum
         self.v_phi_0 = self.v_phi
         self.v_z_0 = v_z_0 / const.C
-        self.v_z = self.v_z_0  
+        self.v_z = self.v_z_0
         self.v = [self.v_r, self.v_phi, self.v_z]
         self.v_T_0 = np.sqrt(self.v_z ** 2 + self.v_r ** 2)
         self.v_T = self.v_T_0
         self.v_esc = self.wind.v_esc(self.d)
         self.v_esc_hist = [self.v_esc]
-        self.dv_dr = 0  
-        self.dr_e = 0  
-        self.escaped = False # this variable tracks whether the wind has reached the escape velocity
+        self.dv_dr = 0
+        self.dr_e = 0
+        # this variable tracks whether the wind has reached the escape velocity
+        self.escaped = False
 
-        
         ## optical depths ##
-        self.tau_dr = self.wind.tau_dr( self.rho) 
-        self.tau_dr_hist= [self.tau_dr]
+        self.tau_dr = self.wind.tau_dr(self.rho)
+        self.tau_dr_hist = [self.tau_dr]
         self.tau_dr_0 = self.tau_dr
         self.tau_dr_shielding = self.wind.tau_dr(self.wind.rho_shielding)
 
-        self.tau_uv = self.radiation.optical_depth_uv(self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding)
-        self.tau_x = self.radiation.optical_depth_x(self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding, self.wind.rho_shielding)
+        self.tau_uv = self.radiation.optical_depth_uv(
+            self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding)
+        self.tau_x = self.radiation.optical_depth_x(
+            self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding, self.wind.rho_shielding)
 
         self.tau_eff = 0
         self.fm = 0
-        self.xi = self.radiation.ionization_parameter(self.r, self.z, self.tau_x, self.wind.rho_shielding)#self.wind.Xi(self.d, self.z / self.r) 
+        self.xi = self.radiation.ionization_parameter(
+            self.r, self.z, self.tau_x, self.wind.rho_shielding)  # self.wind.Xi(self.d, self.z / self.r)
 
         # force related variables #
         self.Fgrav = []
@@ -106,7 +114,7 @@ class streamline():
 
         #### history variables ####
 
-        # position and velocities histories # 
+        # position and velocities histories #
         self.x_hist = [self.x]
         self.d_hist = [self.d]
         self.t_hist = [0]
@@ -122,7 +130,7 @@ class streamline():
         self.rho_hist = [self.rho]
         self.tau_dr_hist = [self.tau_dr]
         self.dvt_hist = [0]
-        self.v2_hist=[0]
+        self.v2_hist = [0]
         self.dv_dr_hist = [0]
         self.dr_e_hist = [self.dr_e]
         self.tau_uv_hist = [self.tau_uv]
@@ -134,7 +142,7 @@ class streamline():
 
         #force histories #
         self.a_hist = [self.a]
-        
+
     ###############
     ## streaming ##
     ###############
@@ -147,8 +155,8 @@ class streamline():
         Returns:
             rho: updated density at the current point.
         """
-        #V_Z_CRIT = 0  
-        #if(self.v_z < V_Z_CRIT):
+        #V_Z_CRIT = 0
+        # if(self.v_z < V_Z_CRIT):
         #    self.rho_hist.append(self.rho)
         #    return self.rho
 
@@ -166,7 +174,7 @@ class streamline():
         Returns:
             grav: graviational force per unit mass in units of c^2 / Rg.
         """
-        
+
         array = np.asarray([self.r / self.d, 0., self.z / self.d])
         grav = - 1. / (self.d**2) * array
         return grav
@@ -179,14 +187,15 @@ class streamline():
         """
         # compute acceleration vector #
         fg = self.force_gravity()
-        fr = self.radiation.force_radiation(self.r, self.z,  self.fm, self.tau_dr, self.tau_uv)
-        self.a = fg 
-        if('gravityonly' in self.wind.modes): # useful for debugging
+        fr = self.radiation.force_radiation(
+            self.r, self.z,  self.fm, self.tau_dr, self.tau_uv)
+        self.a = fg
+        if('gravityonly' in self.wind.modes):  # useful for debugging
             self.a += 0.
         else:
             self.a += fr
 
-        self.a[0] += self.l**2 / self.r**3 # centrifugal term
+        self.a[0] += self.l**2 / self.r**3  # centrifugal term
 
         # update r #
         rnew = self.r + self.v_r * self.dt + 0.5 * self.a[0] * self.dt**2
@@ -214,19 +223,21 @@ class streamline():
         self.v_T = np.sqrt(self.v_r ** 2 + self.v_z**2)
 
         # compute dv_dr #
-        v_T_2 = self.v_T_hist[-1] 
-        self.delta_r = np.linalg.norm(np.asarray(self.x)[[0,2]] - np.asarray(self.x_hist[-1])[[0,2]])
-        #self.vtot = np.linalg.norm(np.asarray(self.v)[[0,2]]) 
+        v_T_2 = self.v_T_hist[-1]
+        self.delta_r = np.linalg.norm(np.asarray(
+            self.x)[[0, 2]] - np.asarray(self.x_hist[-1])[[0, 2]])
+        #self.vtot = np.linalg.norm(np.asarray(self.v)[[0,2]])
         #dvr = self.v_r - self.v_r_hist[-1]
         #dvz = self.v_z - self.v_z_hist[-1]
         #dvt = (self.v[0] * dvr + self.v[2] * dvz) / v2
-        #if (abs(dvt) < 0.01 * v2): # catch possible round off numerical error.
+        # if (abs(dvt) < 0.01 * v2): # catch possible round off numerical error.
         #    print("hi")
         #    self.dv_dr = dvt / self.delta_r
-        #else:
+        # else:
         #    self.dv_dr = (self.vtot - v2) / self.delta_r
-        self.dv_dr = float((Decimal(self.v_T) - Decimal(v_T_2)) / Decimal(self.delta_r)) # use decimal to prevent round off error
-
+        # use decimal to prevent round off error
+        self.dv_dr = float(
+            (Decimal(self.v_T) - Decimal(v_T_2)) / Decimal(self.delta_r))
 
         # finally update time #
         self.t = self.t + self.dt
@@ -245,8 +256,8 @@ class streamline():
         self.Fgrav.append(fg)
         self.Frad.append(fr)
         self.a_hist.append(self.a)
-        #self.dvt_hist.append(dvt)
-        #self.v2_hist.append(v2)
+        # self.dvt_hist.append(dvt)
+        # self.v2_hist.append(v2)
         self.dv_dr_hist.append(self.dv_dr)
         self.v_T_hist.append(self.v_T)
         self.t_hist.append(self.t)
@@ -257,14 +268,19 @@ class streamline():
         """
         self.rho = self.update_density()
         self.tau_dr = self.wind.tau_dr(self.rho)
-        self.tau_eff = self.radiation.sobolev_optical_depth(self.tau_dr, self.dv_dr)
-        tau_eff_max = self.tau_dr * self.d #abs(self.r - self.r_0)
-        self.tau_eff = min(self.tau_eff, tau_eff_max) # prevent effective optical depth to grow unphyisically large.
-        self.tau_uv = self.radiation.optical_depth_uv(self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding)
-        self.tau_x = self.radiation.optical_depth_x(self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding, self.wind.rho_shielding)
-        self.xi = self.radiation.ionization_parameter(self.r,self.z, self.tau_x, self.rho)
+        self.tau_eff = self.radiation.sobolev_optical_depth(
+            self.tau_dr, self.dv_dr)
+        tau_eff_max = self.tau_dr * self.d  # abs(self.r - self.r_0)
+        # prevent effective optical depth to grow unphyisically large.
+        self.tau_eff = min(self.tau_eff, tau_eff_max)
+        self.tau_uv = self.radiation.optical_depth_uv(
+            self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding)
+        self.tau_x = self.radiation.optical_depth_x(
+            self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding, self.wind.rho_shielding)
+        self.xi = self.radiation.ionization_parameter(
+            self.r, self.z, self.tau_x, self.rho)
         self.fm = self.radiation.force_multiplier(self.tau_eff, self.xi)
-        
+
         # append to history #
         self.tau_dr_hist.append(self.tau_dr)
         self.dr_e_hist.append(self.tau_eff/self.tau_dr)
@@ -283,11 +299,10 @@ class streamline():
         # update radiation field #
         self.update_radiation()
 
-
     def iterate(self, niter=5000):
         """
         Iterates the streamline
-        
+
         Args:        
             niter : Number of iterations
         """
@@ -299,18 +314,18 @@ class streamline():
             # record number of iterations #
             self.it = it
             self.iter.append(it)
-            
+
             if (it == 99):
                 # update time step  at 100 iterations#
                 self.dt = self.dt * 10.
 
             # termination condition for a failed wind #
-            if( ((self.z <= self.z_0) and (self.v_z < 0.0)) or ((self.z < 0.2 * np.max(self.z_hist)) and (self.v_z < 0.0)) ):
+            if(((self.z <= self.z_0) and (self.v_z < 0.0)) or ((self.z < 0.2 * np.max(self.z_hist)) and (self.v_z < 0.0))):
                 print("Failed wind! \n")
                 break
-            
+
             # record when streamline escapes #
-            if( (self.v_T > v_esc) and (not self.escaped)):
+            if((self.v_T > v_esc) and (not self.escaped)):
                 self.escaped = True
                 print("escape velocity reached.")
             a_t = np.sqrt(self.a[0]**2 + self.a[2]**2)
@@ -324,7 +339,7 @@ class streamline():
                 break
 
             # check line stalling
-            #if abs(self.v_T - self.v_th) < 2.335e-5:
+            # if abs(self.v_T - self.v_th) < 2.335e-5:
             #    #self.r, self.phi, self.z = self.x_hist[-2]
             #    #self.v_r, self.v_phi, self.v_z = self.v_hist[-2]
             #    #self.x = self.x_hist[-2]

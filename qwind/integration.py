@@ -82,6 +82,7 @@ def _integrate_dblquad_kernel_r(phi_d, r_d, r, z):
     ff = ff0 * cos_gamma
     return ff
 
+
 @jit_integrand
 def _integrate_dblquad_kernel_r_jitted(phi_d, r_d, r, z):
     """
@@ -123,6 +124,7 @@ def _integrate_dblquad_kernel_z(phi_d, r_d, r, z):
     ff = ff0 * 1. / delta**2.
     return ff
 
+
 @jit_integrand
 def _integrate_dblquad_kernel_z_jitted(phi_d, r_d, r, z):
     """
@@ -144,8 +146,6 @@ def _integrate_dblquad_kernel_z_jitted(phi_d, r_d, r, z):
     return ff
 
 
-
-
 def qwind_integration_dblquad(r, z, disk_r_min, disk_r_max):
     """
     Double quad integration of the radiation force integral, using the Nquad
@@ -165,11 +165,13 @@ def qwind_integration_dblquad(r, z, disk_r_min, disk_r_max):
             3: error of the z integral
     """
     r_int, r_error = scipy.integrate.nquad(
-        _integrate_dblquad_kernel_r_jitted, ((0, np.pi), (disk_r_min, disk_r_max)),
+        _integrate_dblquad_kernel_r_jitted, ((
+            0, np.pi), (disk_r_min, disk_r_max)),
         args=(r, z),
         opts=[{'points': [0]}, {'points': [r]}])
     z_int, z_error = scipy.integrate.nquad(
-        _integrate_dblquad_kernel_z_jitted, ((0, np.pi), (disk_r_min, disk_r_max)),
+        _integrate_dblquad_kernel_z_jitted, ((
+            0, np.pi), (disk_r_min, disk_r_max)),
         args=(r, z),
         opts=[{'points': [0]}, {'points': [r]}])
     r_int = 2. * z * r_int
@@ -185,6 +187,7 @@ deltaphids = np.asarray([phids[i + 1] - phids[i]
                          for i in range(0, len(phids) - 1)])
 rds = np.geomspace(6, 1400, 250 + 1)
 deltards = np.asarray([rds[i + 1] - rds[i] for i in range(0, len(rds) - 1)])
+
 
 @jit(nopython=True)
 def _qwind_integral_kernel(r_d, phi_d, r, z):

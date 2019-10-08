@@ -32,7 +32,7 @@ class Qwind:
                  lines_r_max=1600,
                  disk_r_min=6.,
                  disk_r_max=1400,
-                 f_x = None,
+                 f_x=None,
                  T=2e6,
                  mu=1,
                  modes=[],
