@@ -307,6 +307,8 @@ class streamline():
             niter : Number of iterations
         """
         stalling_timer = 0
+        print(' ', end='', flush=True)
+
         for it in tqdm(range(0, niter)):
             self.step()
             v_esc = self.wind.v_esc(self.d)
