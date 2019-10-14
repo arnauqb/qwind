@@ -187,6 +187,7 @@ class streamline():
         """
         # compute acceleration vector #
         fg = self.force_gravity()
+        self.Fgrav.append(fg)
         fr = self.radiation.force_radiation(
             self.r, self.z,  self.fm, self.tau_dr, self.tau_uv)
         self.a = fg
@@ -253,7 +254,6 @@ class streamline():
         self.v_phi_hist.append(self.v_phi)
         self.v_z_hist.append(self.v_z)
         self.v_hist.append(self.v)
-        self.Fgrav.append(fg)
         self.Frad.append(fr)
         self.a_hist.append(self.a)
         # self.dvt_hist.append(dvt)
@@ -331,9 +331,9 @@ class streamline():
             a_t = np.sqrt(self.a[0]**2 + self.a[2]**2)
 
             #termination condition for an escaped wind #
-            if(self.escaped and a_t < 1e-8):
-                print("Wind escaped")
-                break
+            #if(self.escaped and a_t < 1e-8):
+            #    print("Wind escaped")
+            #    break
             if(self.d > 3000):
                 print("out of grid \n")
                 break
