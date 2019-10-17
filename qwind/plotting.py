@@ -46,6 +46,12 @@ def pcolormesh_sensible(x_range, y_range, data, ax, logx = True, logy=True, cmap
     else:
         y_range_log = y_range
         
+
+    for i in range(1,len(x_range)):
+        dx = x_range_log[i] - x_range_log[i-1]
+        x_new = x_range[i] - dx / 2
+        
+        
     dx = x_range_log[1] - x_range_log[0]
     #for i in range(1,len(x_range)):
         #assert dx == x_range_log[i] - x_range_log[i-1], "x array must be equally spaced"
