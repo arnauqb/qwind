@@ -38,7 +38,8 @@ class streamline():
             T=2e6,
             v_z_0=1e7,
             v_r_0=0.,
-            dt=4.096 / 10.
+            dt=4.096 / 10.,
+            line_idx=0,
     ):
         """
         Args:
@@ -54,6 +55,7 @@ class streamline():
         """
         self.wind = wind
         self.radiation = radiation_class
+        self.line_idx = line_idx
 
         # black hole and disc variables #
         self.a = np.array([0, 0, 0])  # / u.s**2
@@ -97,15 +99,28 @@ class streamline():
         self.tau_dr_0 = self.tau_dr
         self.tau_dr_shielding = self.wind.tau_dr(self.wind.rho_shielding)
 
-        self.tau_uv = self.radiation.optical_depth_uv(
-            self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding)
-        self.tau_x = self.radiation.optical_depth_x(
-            self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding, self.wind.rho_shielding)
+        self.tau_uv = self.radiation.optical_depth_uv(self.r,
+                                                      self.z,
+                                                      self.r_0,
+                                                      self.z_0,
+                                                      self.tau_dr,
+                                                      self.tau_dr,
+                                                      self.tau_dr_shielding,
+                                                      self.line_idx)
+        self.tau_x = self.radiation.optical_depth_x(self.r,
+                                                    self.z,
+                                                    self.r_0,
+                                                    self.tau_dr,
+                                                    self.tau_dr_shielding,
+                                                    self.wind.rho_shielding,
+                                                    self.line_idx,
+                                                    )
 
         self.tau_eff = 0
         self.fm = 0
         self.xi = self.radiation.ionization_parameter(
             self.r, self.z, self.tau_x, self.wind.rho_shielding)  # self.wind.Xi(self.d, self.z / self.r)
+        self.tanthetamax = -1
 
         # force related variables #
         self.Fgrav = []
@@ -155,10 +170,10 @@ class streamline():
         Returns:
             rho: updated density at the current point.
         """
-        #V_Z_CRIT = 0
-        # if(self.v_z < V_Z_CRIT):
-        #    self.rho_hist.append(self.rho)
-        #    return self.rho
+        #V_Z_CRIT = 1e6 / const.C
+        #if(self.v_z < V_Z_CRIT):
+        #   self.rho_hist.append(self.rho)
+        #   return self.rho
 
         radial = (self.d / self.r_0) ** (-2.)
         v_ratio = self.v_z_0 / self.v_T
@@ -189,7 +204,7 @@ class streamline():
         fg = self.force_gravity()
         self.Fgrav.append(fg)
         fr = self.radiation.force_radiation(
-            self.r, self.z,  self.fm, self.tau_dr, self.tau_uv)
+            self.r, self.z, self.r_0,  self.fm, self.tau_dr, self.tau_uv)
         self.a = fg
         if('gravityonly' in self.wind.modes):  # useful for debugging
             self.a += 0.
@@ -269,14 +284,27 @@ class streamline():
         self.rho = self.update_density()
         self.tau_dr = self.wind.tau_dr(self.rho)
         self.tau_eff = self.radiation.sobolev_optical_depth(
-            self.tau_dr, self.dv_dr)
+            self.tau_dr, self.tau_dr_0, self.dv_dr)
         tau_eff_max = self.tau_dr * self.d  # abs(self.r - self.r_0)
         # prevent effective optical depth to grow unphyisically large.
         self.tau_eff = min(self.tau_eff, tau_eff_max)
-        self.tau_uv = self.radiation.optical_depth_uv(
-            self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding)
-        self.tau_x = self.radiation.optical_depth_x(
-            self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding, self.wind.rho_shielding)
+        self.tau_uv = self.radiation.optical_depth_uv(self.r,
+                                                      self.z,
+                                                      self.r_0,
+                                                      self.z_0,
+                                                      np.mean(self.tau_dr_hist),
+                                                      self.tau_dr,
+                                                      self.tau_dr_0,
+                                                      self.line_idx,
+                                                      )
+        self.tau_x = self.radiation.optical_depth_x(self.r,
+                                                    self.z,
+                                                    self.r_0,
+                                                    self.tau_dr,
+                                                    self.tau_dr_shielding,
+                                                    self.wind.rho_shielding,
+                                                    self.line_idx,
+                                                    )
         self.xi = self.radiation.ionization_parameter(
             self.r, self.z, self.tau_x, self.rho)
         self.fm = self.radiation.force_multiplier(self.tau_eff, self.xi)

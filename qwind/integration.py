@@ -84,7 +84,7 @@ def _integrate_dblquad_kernel_r(phi_d, r_d, r, z):
 
 
 @jit_integrand
-def _integrate_dblquad_kernel_r_jitted(phi_d, r_d, r, z):
+def _integrate_dblquad_kernel_r_jitted(phi_d, r_d, r, z, tau_dr):
     """
     Radial part the radiation force integral.
 
@@ -126,7 +126,7 @@ def _integrate_dblquad_kernel_z(phi_d, r_d, r, z):
 
 
 @jit_integrand
-def _integrate_dblquad_kernel_z_jitted(phi_d, r_d, r, z):
+def _integrate_dblquad_kernel_z_jitted(phi_d, r_d, r, z, tau_dr):
     """
     Z part the radiation force integral.
 
@@ -146,7 +146,7 @@ def _integrate_dblquad_kernel_z_jitted(phi_d, r_d, r, z):
     return ff
 
 
-def qwind_integration_dblquad(r, z, disk_r_min, disk_r_max):
+def qwind_integration_dblquad(r, z, tau_dr, disk_r_min, disk_r_max):
     """
     Double quad integration of the radiation force integral, using the Nquad
     algorithm. 
@@ -167,12 +167,12 @@ def qwind_integration_dblquad(r, z, disk_r_min, disk_r_max):
     r_int, r_error = scipy.integrate.nquad(
         _integrate_dblquad_kernel_r_jitted, ((
             0, np.pi), (disk_r_min, disk_r_max)),
-        args=(r, z),
+        args=(r, z, tau_dr),
         opts=[{'points': [0]}, {'points': [r]}])
     z_int, z_error = scipy.integrate.nquad(
         _integrate_dblquad_kernel_z_jitted, ((
             0, np.pi), (disk_r_min, disk_r_max)),
-        args=(r, z),
+        args=(r, z, tau_dr),
         opts=[{'points': [0]}, {'points': [r]}])
     r_int = 2. * z * r_int
     z_int = 2. * z**2 * z_int

@@ -98,13 +98,22 @@ class Qwind:
 
         self.bol_luminosity = self.mdot * self.eddington_luminosity
         #self.tau_dr_0 = self.tau_dr(rho_shielding)
-        self.tau_dr_shielding = self.tau_dr(rho_shielding)
         self.v_thermal = self.thermal_velocity(T)
         self.lines_r_min = lines_r_min
         self.lines_r_max = lines_r_max
         self.f_x = f_x
+        if (radiation_mode == "QSOSED"):
+            from qwind.radiation import qsosed
+            self.radiation = qsosed.QSOSED(self)
+        elif (radiation_mode == "SimpleSED"):
+            from qwind.radiation import simple_sed
+            self.radiation = simple_sed.SimpleSED(self)
+        else:
+            print("Unknown radiation module.")
+            sys.exit()
 
-        self.radiation = simple_sed.SimpleSED(self)
+
+        self.tau_dr_shielding = self.tau_dr(self.rho_shielding)
 
         print("disk_r_min: %f \n disk_r_max: %f" %
               (self.disk_r_min, self.disk_r_max))
@@ -178,18 +187,6 @@ class Qwind:
 
         return np.sqrt(const.K_B * T / (self.mu * const.M_P)) / const.C
 
-    def density_ss(self, r):
-        R = r * 2 * self.RG
-        cut = 18 * (self.M / const.M_SUN)**(2./21.) * \
-            (self.mdot / self.eta)**(16./21.) * 2 * self.RG
-        if (R <= cut):
-            rho = 5.24e-4 * (self.M/const.M_SUN)**(-1.) * \
-                (self.mdot/self.eta)**(-2.) * (R/(2*self.RG))**(3./2.)
-        else:
-            rho = 4.66 * (self.M/const.M_SUN)**(-7./10.) * (self.mdot /
-                                                            self.eta)**(2./5.) * (R/(2*self.RG))**(-33./20.)
-        return rho / const.M_P
-
     def tau_dr(self, density):
         """ 
         Differential optical depth.
@@ -205,13 +202,15 @@ class Qwind:
         return tau_dr
 
     def line(self,
-             r_0="ss",
-             z_0=10.,
+             r_0,
+             derive_from_ss = False,
+             z_0=1.,
              rho_0=2e8,
              T=2e6,
              v_r_0=0.,
              v_z_0=1e7,
-             dt=4.096 / 10.
+             dt=4.096 / 10.,
+             line_idx=0,
              ):
         """
         Initialises a streamline object.
@@ -233,6 +232,12 @@ class Qwind:
         dt : float
             Timestep in units of Rg/c.
         """
+        if derive_from_ss:
+            #z_0 = self.radiation.sed_class.disk_scale_height(r_0)
+            temperature = self.radiation.sed_class.disk_nt_temperature4(r_0)**(1./4.)
+            v_z_0  = self.thermal_velocity(temperature) * const.C
+            rho_0 = self.radiation.sed_class.disk_number_density(r_0)
+
         from qwind.streamline import streamline
         return streamline(
             self.radiation,
@@ -243,10 +248,11 @@ class Qwind:
             T=T,
             v_r_0=v_r_0,
             v_z_0=v_z_0,
-            dt=dt
+            dt=dt,
+            line_idx=line_idx,
         )
 
-    def start_lines(self, v_z_0=1e7, niter=5000, rho=None, z_0=10):
+    def start_lines(self, derive_from_ss=False, v_z_0=1e7, niter=5000, rho_0=2e8, z_0=10):
         """
         Starts and evolves a set of equally spaced streamlines.
 
@@ -261,30 +267,30 @@ class Qwind:
         """
         print("Starting line iteration")
         self.lines = []
-
+        #self.tanthetamax = -1
         for i, r in enumerate(self.lines_r_range):
-            if (v_z_0 == "auto"):
-                if (r > self.radiation.sed_class.corona_radius):
-                    if (r < 2 * self.radiation.sed_class.corona_radius):
-                        v_z_0 = self.thermal_velocity(2.3e6) * const.C
-                    else:
-                        v_z_0 = self.thermal_velocity(
-                            self.radiation.sed_class.disk_temperature4(r)**(1./4.)) * const.C
-                else:
-                    print("streamline would be inside corona radius, ignoring.")
-                    continue
-            else:
-                v_z_0 = v_z_0
-            if(rho is None):
-                rho = self.density_ss(r)
-            self.lines.append(
-                self.line(r_0=r, v_z_0=v_z_0, rho_0=rho, z_0=z_0))
+            self.lines.append(self.line(r_0=r,
+                                        derive_from_ss=derive_from_ss,
+                                        v_z_0=v_z_0,
+                                        rho_0=rho_0,
+                                        z_0=z_0,
+                                        line_idx=i))
         i = 0
         if(self.n_cpus == 1):
             for line in self.lines:
                 i += 1
                 print("Line %d of %d" % (i, len(self.lines)))
                 line.iterate(niter=niter)
+                max_height_point = np.argmax(line.z_hist)
+                z_max = line.z_hist[max_height_point]
+                r_max = line.r_hist[max_height_point]
+                tantheta = z_max / r_max
+                line.tanthetamax = tantheta
+                #if tantheta >= self.tanthetamax:
+                #    self.tanthetamax = tantheta
+                #    print("hi")
+                #print(tantheta, self.tanthetamax)
+
             self.mdot_w = self.compute_wind_mass_loss()
             return self.lines
         print("multiple cpus")

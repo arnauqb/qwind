@@ -18,11 +18,6 @@ class SimpleSED:
 
     def __init__(self, wind):
         self.wind = wind
-        self.lines_r_min = self.wind.lines_r_min
-        self.lines_r_max = self.wind.lines_r_max
-        self.dr = (self.lines_r_max - self.lines_r_min) / (self.wind.nr - 1)
-        self.r_init = self.lines_r_min + 0.5 * self.dr
-        self.wind.tau_dr_0 = self.wind.tau_dr(self.wind.rho_shielding)
         if self.wind.f_x is None:
             self.sed_class = sed.SED(
                 M=wind.M / const.M_SUN,
@@ -35,6 +30,17 @@ class SimpleSED:
         else:
             self.uv_fraction = 1 - self.wind.f_x
             self.xray_fraction = self.wind.f_x
+        if self.wind.lines_r_min == "corona":
+            self.wind.lines_r_min = self.sed_class.corona_radius
+        if self.wind.rho_shielding == "ss":
+            self.wind.rho_shielding = self.sed_class.disk_number_density(self.wind.lines_r_min)
+
+        self.lines_r_min = self.wind.lines_r_min
+        self.lines_r_max = self.wind.lines_r_max
+        self.dr = (self.lines_r_max - self.lines_r_min) / (self.wind.nr - 1)
+        self.r_init = self.lines_r_min + 0.5 * self.dr
+        self.wind.tau_dr_0 = self.wind.tau_dr(self.wind.rho_shielding)
+        
         self.xray_luminosity = self.wind.mdot * \
             self.wind.eddington_luminosity * self.xray_fraction
         self.r_x = self.ionization_radius()
@@ -79,7 +85,7 @@ class SimpleSED:
                 ETAMAX_INTERP_ETAMAX_VALUES[-1]),
             kind='cubic')  # important! xi is log here
 
-    def optical_depth_uv(self, r, z, r_0, tau_dr, tau_dr_0):
+    def optical_depth_uv(self, r, z, r_0, z_0, tau_mean, tau_dr, tau_dr_0, line_idx):
         """
         UV optical depth.
 
@@ -98,7 +104,9 @@ class SimpleSED:
         distance = np.sqrt(r**2 + z**2)
         sec_theta = distance / r
         tau_uv = sec_theta * (delta_r_0 * tau_dr_0 + delta_r * tau_dr)
-        tau_uv = min(tau_uv, 50)
+        #distance = np.sqrt((r-r_0)**2 + (z-z_0)**2)
+        #tau_uv = tau_mean * distance
+        #tau_uv = min(tau_uv, 50)
         assert tau_uv >= 0, "UV optical depth cannot be negative!"
         return tau_uv
 
@@ -116,9 +124,15 @@ class SimpleSED:
         Returns:
             ionization parameter.
         """
+        DENSITY_FLOOR = 1e6
+        if r < self.r_init:
+            rho = DENSITY_FLOOR
+            tau_x = tau_x / rho_shielding * DENSITY_FLOOR
+        else:
+            rho = rho_shielding
         distance_2 = r**2. + z**2.
         xi = self.xray_luminosity * \
-            np.exp(-tau_x) / (rho_shielding *
+            np.exp(-tau_x) / (rho *
                               distance_2 * self.wind.RG**2)  # / 8.2125
         assert xi > 0, "Ionization parameter cannot be negative!"
         xi += 1e-20  # to avoid overflow
@@ -178,7 +192,7 @@ class SimpleSED:
         else:
             return 100
 
-    def optical_depth_x(self, r, z, r_0, tau_dr, tau_dr_0, rho_shielding):
+    def optical_depth_x(self, r, z, r_0, tau_dr, tau_dr_0, rho_shielding, line_idx):
         """
         X-Ray optical depth at a distance d.
 
@@ -244,7 +258,7 @@ class SimpleSED:
         assert eta_max >= 0, "Eta Max cannot be negative!"
         return eta_max
 
-    def sobolev_optical_depth(self, tau_dr, dv_dr):
+    def sobolev_optical_depth(self, tau_dr, tau_dr_0, dv_dr):
         """
         Returns differential optical depth times a factor that compares thermal velocity with spatial velocity gradient.
 
@@ -289,7 +303,7 @@ class SimpleSED:
         assert fm >= 0, "Force multiplier cannot be negative!"
         return fm
 
-    def force_radiation(self, r, z, fm, tau_dr, tau_uv, return_error=False):
+    def force_radiation(self, r, z, r_0, fm, tau_dr, tau_uv, return_error=False):
         """
         Computes the radiation force at the point (r,z)
 
@@ -302,25 +316,25 @@ class SimpleSED:
         Returns:
             radiation force at the point (r,z) boosted by fm and attenuated by e^tau_uv.
         """
-
+        
+        tau_dr_uv = 0 
         if('old_integral' in self.wind.modes):
             i_aux = integration.qwind_old_integration(r, z)
         else:
             i_aux = integration.qwind_integration_dblquad(
-                r, z, self.wind.disk_r_min, self.wind.disk_r_max)
+                r, z, tau_dr_uv, self.wind.disk_r_min, self.wind.disk_r_max)
             error = i_aux[2:4]
             self.int_error_hist.append(error)
 
         self.int_hist.append(i_aux)
         abs_uv = np.exp(-tau_uv)
         constant = (1 + fm) * self.FORCE_RADIATION_CONSTANT
-        #d = np.sqrt(r**2 + z**2)
-        #cost = z / d
-        #sint = r / d
         force = constant * abs_uv * np.asarray([i_aux[0],
-                                                0.,
-                                                i_aux[1],
-                                                ])
+                                       0.,
+                                       i_aux[1],
+                                       ])
+
+
         if return_error:
             error = constant * np.array(error)
             return [force, error]
