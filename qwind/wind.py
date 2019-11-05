@@ -210,7 +210,6 @@ class Qwind:
              v_r_0=0.,
              v_z_0=1e7,
              dt=4.096 / 10.,
-             line_idx=0,
              ):
         """
         Initialises a streamline object.
@@ -249,7 +248,6 @@ class Qwind:
             v_r_0=v_r_0,
             v_z_0=v_z_0,
             dt=dt,
-            line_idx=line_idx,
         )
 
     def start_lines(self, derive_from_ss=False, v_z_0=1e7, niter=5000, rho_0=2e8, z_0=10):
@@ -274,7 +272,7 @@ class Qwind:
                                         v_z_0=v_z_0,
                                         rho_0=rho_0,
                                         z_0=z_0,
-                                        line_idx=i))
+                                        ))
         i = 0
         if(self.n_cpus == 1):
             for line in self.lines:

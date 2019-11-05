@@ -38,8 +38,7 @@ class streamline():
             T=2e6,
             v_z_0=1e7,
             v_r_0=0.,
-            dt=4.096 / 10.,
-            line_idx=0,
+            dt=4.096 / 10.
     ):
         """
         Args:
@@ -55,7 +54,6 @@ class streamline():
         """
         self.wind = wind
         self.radiation = radiation_class
-        self.line_idx = line_idx
 
         # black hole and disc variables #
         self.a = np.array([0, 0, 0])  # / u.s**2
@@ -99,28 +97,15 @@ class streamline():
         self.tau_dr_0 = self.tau_dr
         self.tau_dr_shielding = self.wind.tau_dr(self.wind.rho_shielding)
 
-        self.tau_uv = self.radiation.optical_depth_uv(self.r,
-                                                      self.z,
-                                                      self.r_0,
-                                                      self.z_0,
-                                                      self.tau_dr,
-                                                      self.tau_dr,
-                                                      self.tau_dr_shielding,
-                                                      self.line_idx)
-        self.tau_x = self.radiation.optical_depth_x(self.r,
-                                                    self.z,
-                                                    self.r_0,
-                                                    self.tau_dr,
-                                                    self.tau_dr_shielding,
-                                                    self.wind.rho_shielding,
-                                                    self.line_idx,
-                                                    )
+        self.tau_uv = self.radiation.optical_depth_uv(
+            self.r, self.z, self.r_0, self.z_0, self.tau_dr, self.tau_dr_shielding)
+        self.tau_x = self.radiation.optical_depth_x(
+            self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding, self.wind.rho_shielding)
 
         self.tau_eff = 0
         self.fm = 0
         self.xi = self.radiation.ionization_parameter(
             self.r, self.z, self.tau_x, self.wind.rho_shielding)  # self.wind.Xi(self.d, self.z / self.r)
-        self.tanthetamax = -1
 
         # force related variables #
         self.Fgrav = []
@@ -170,10 +155,10 @@ class streamline():
         Returns:
             rho: updated density at the current point.
         """
-        #V_Z_CRIT = 1e6 / const.C
-        #if(self.v_z < V_Z_CRIT):
-        #   self.rho_hist.append(self.rho)
-        #   return self.rho
+        #V_Z_CRIT = 0
+        # if(self.v_z < V_Z_CRIT):
+        #    self.rho_hist.append(self.rho)
+        #    return self.rho
 
         radial = (self.d / self.r_0) ** (-2.)
         v_ratio = self.v_z_0 / self.v_T
@@ -204,7 +189,7 @@ class streamline():
         fg = self.force_gravity()
         self.Fgrav.append(fg)
         fr = self.radiation.force_radiation(
-            self.r, self.z, self.r_0,  self.fm, self.tau_dr, self.tau_uv)
+            self.r, self.z, self.z_0, self.fm, self.tau_dr, self.tau_dr_0, self.tau_uv)
         self.a = fg
         if('gravityonly' in self.wind.modes):  # useful for debugging
             self.a += 0.
@@ -240,8 +225,8 @@ class streamline():
 
         # compute dv_dr #
         v_T_2 = self.v_T_hist[-1]
-        self.delta_r = np.linalg.norm(np.asarray(
-            self.x)[[0, 2]] - np.asarray(self.x_hist[-1])[[0, 2]])
+        self.sobolev_delta_r= Decimal(np.linalg.norm(np.asarray(
+            self.x)[[0, 2]] - np.asarray(self.x_hist[-1])[[0, 2]]))
         #self.vtot = np.linalg.norm(np.asarray(self.v)[[0,2]])
         #dvr = self.v_r - self.v_r_hist[-1]
         #dvz = self.v_z - self.v_z_hist[-1]
@@ -252,8 +237,8 @@ class streamline():
         # else:
         #    self.dv_dr = (self.vtot - v2) / self.delta_r
         # use decimal to prevent round off error
-        self.dv_dr = float(
-            (Decimal(self.v_T) - Decimal(v_T_2)) / Decimal(self.delta_r))
+        dv = min((Decimal(self.v_T) - Decimal(v_T_2)), self.wind.v_thermal)
+        self.dv_dr = float(dv / self.sobolev_delta_r)
 
         # finally update time #
         self.t = self.t + self.dt
@@ -284,27 +269,14 @@ class streamline():
         self.rho = self.update_density()
         self.tau_dr = self.wind.tau_dr(self.rho)
         self.tau_eff = self.radiation.sobolev_optical_depth(
-            self.tau_dr, self.tau_dr_0, self.dv_dr)
+            self.tau_dr, self.dv_dr)
         tau_eff_max = self.tau_dr * self.d  # abs(self.r - self.r_0)
         # prevent effective optical depth to grow unphyisically large.
-        self.tau_eff = min(self.tau_eff, tau_eff_max)
-        self.tau_uv = self.radiation.optical_depth_uv(self.r,
-                                                      self.z,
-                                                      self.r_0,
-                                                      self.z_0,
-                                                      np.mean(self.tau_dr_hist),
-                                                      self.tau_dr,
-                                                      self.tau_dr_0,
-                                                      self.line_idx,
-                                                      )
-        self.tau_x = self.radiation.optical_depth_x(self.r,
-                                                    self.z,
-                                                    self.r_0,
-                                                    self.tau_dr,
-                                                    self.tau_dr_shielding,
-                                                    self.wind.rho_shielding,
-                                                    self.line_idx,
-                                                    )
+        #self.tau_eff = min(self.tau_eff, tau_eff_max)
+        self.tau_uv = self.radiation.optical_depth_uv(
+            self.r, self.z, self.r_0, self.z_0,  self.tau_dr, self.tau_dr_shielding)
+        self.tau_x = self.radiation.optical_depth_x(
+            self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding, self.wind.rho_shielding)
         self.xi = self.radiation.ionization_parameter(
             self.r, self.z, self.tau_x, self.rho)
         self.fm = self.radiation.force_multiplier(self.tau_eff, self.xi)
@@ -334,8 +306,8 @@ class streamline():
         Args:        
             niter : Number of iterations
         """
-        stalling_timer = 0
         print(' ', end='', flush=True)
+        stalling_timer=0
 
         for it in tqdm(range(0, niter)):
             self.step()
@@ -350,7 +322,7 @@ class streamline():
                 self.dt = self.dt * 10.
 
             # termination condition for a failed wind #
-            if(((self.z <= self.z_0) and (self.v_z < 0.0)) or ((self.z < 0.2 * np.max(self.z_hist)) and (self.v_z < 0.0))):
+            if(((self.z <= self.z_0) and (self.v_z < 0.0)) or ((self.z <  np.max(self.z_hist)) and (self.v_z < 0.0))):
                 print("Failed wind! \n")
                 break
 
@@ -368,16 +340,23 @@ class streamline():
                 print("out of grid \n")
                 break
 
-            # check line stalling
-            # if abs(self.v_T - self.v_th) < 2.335e-5:
-            #    #self.r, self.phi, self.z = self.x_hist[-2]
-            #    #self.v_r, self.v_phi, self.v_z = self.v_hist[-2]
-            #    #self.x = self.x_hist[-2]
-            #    #self.v = self.v_hist[-2]
+            #check line stalling
+            #if self.v_z - self.v_th < 1e-5:
+            #    self.r, self.phi, self.z = self.x_hist[-2]
+            #    self.v_r, self.v_phi, self.v_z = self.v_hist[-2]
+            #    self.x = self.x_hist[-2]
+            #    self.v = self.v_hist[-2]
             #    stalling_timer += 1
-            #    if stalling_timer == 1:
-            #        self.dv_dr += 1e-5 * self.dv_dr
-            #    elif stalling_timer == 2:
-            #        self.r += 1e-5 * self.r
-            #    elif stalling_timer == 3:
-            #        self.v_r += 1e-5 * self.v_r1
+            #    print("stalling...")
+            #    #if stalling_timer == 1:
+            #    #    self.dv_dr += 1e-5 * self.dv_dr
+            #    #elif stalling_timer == 2:
+            #    #    self.r += 1e-5 * self.r
+            #    #elif stalling_timer == 3:
+            #    #   self.v_r += 1e-5 * self.v_r
+            #    #else:
+            #    if stalling_timer == 4:
+            #        print("Line stalled, terminating")
+            #        break
+            #else:
+            #    stalling_timer = 0
