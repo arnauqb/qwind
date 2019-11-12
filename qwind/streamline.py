@@ -238,7 +238,7 @@ class streamline():
         #    self.dv_dr = (self.vtot - v2) / self.delta_r
         # use decimal to prevent round off error
         dv = min((Decimal(self.v_T) - Decimal(v_T_2)), self.wind.v_thermal)
-        self.dv_dr = float(dv / self.sobolev_delta_r)
+        self.dv_dr = float(dv) / float(self.sobolev_delta_r)
 
         # finally update time #
         self.t = self.t + self.dt
@@ -336,7 +336,7 @@ class streamline():
             #if(self.escaped and a_t < 1e-8):
             #    print("Wind escaped")
             #    break
-            if(self.d > 3000):
+            if(self.d > 100000):
                 print("out of grid \n")
                 break
 

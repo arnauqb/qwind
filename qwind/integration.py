@@ -61,6 +61,32 @@ def jit_integrand(integrand_function):
 
     return LowLevelCallable(cf(wrapped).ctypes)
 
+@jit(nopython=True)
+def nt_rel_factors(r, astar=0, isco=6):
+    """
+    Relatistic A,B,C factors of the Novikov-Thorne model.
+    
+    Parameters
+    ¦   Black Hole Mass in solar Masses
+    -----------
+    r : float
+    ¦   disk radial distance.
+    """
+    yms = np.sqrt(isco)
+    y1 = 2 * np.cos((np.arccos(astar) - np.pi) / 3)
+    y2 = 2 * np.cos((np.arccos(astar) + np.pi) / 3)
+    y3 = -2 * np.cos(np.arccos(astar) / 3)
+    y = np.sqrt(r)
+    C = 1 - 3 / r + 2 * astar / r**(1.5)
+    B = 3 * (y1 - astar)**2 * np.log(
+       (y - y1) / (yms - y1)) / (y * y1 * (y1 - y2) * (y1 - y3))
+    B += 3 * (y2 - astar)**2 * np.log(
+       (y - y2) / (yms - y2)) / (y * y2 * (y2 - y1) * (y2 - y3))
+    B += 3 * (y3 - astar)**2 * np.log(
+       (y - y3) / (yms - y3)) / (y * y3 * (y3 - y1) * (y3 - y2))
+    A = 1 - yms / y - 3 * astar * np.log(y / yms) / (2 * y)
+    factor = (A-B)/C
+    return factor
 
 def _integrate_dblquad_kernel_r(phi_d, r_d, r, z):
     """
@@ -100,9 +126,28 @@ def _integrate_dblquad_kernel_r_jitted(phi_d, r_d, r, z, z_0, tau_dr_uv):
     """
     ff0 = (1. - np.sqrt(6. / r_d)) / r_d ** 2.
     delta = r**2. + r_d**2. + z**2. - 2.*r*r_d * np.cos(phi_d)
-    #delta_tau = np.sqrt(r**2. + r_d**2. + (z-z_0)**2. - 2.*r*r_d * np.cos(phi_d))
     cos_gamma = (r - r_d*np.cos(phi_d)) / delta**2.
-    #abs_uv = np.exp(-tau_dr_uv * delta_tau)
+    ff = ff0 * cos_gamma# * abs_uv
+    return ff
+
+@jit_integrand
+def _integrate_dblquad_kernel_r_jitted_rel(phi_d, r_d, r, z, z_0, tau_dr_uv):
+    """
+    Radial part the radiation force integral.
+
+    Args:
+        phi_d: disc angle integration variable in radians.
+        r_d: disc radius integration variable in Rg.
+        r: disc radius position in Rg
+        z: disc height position in Rg
+
+    Returns:
+        Radial integral kernel.
+
+    """
+    ff0 = nt_rel_factors(r_d) / r_d**2.
+    delta = r**2. + r_d**2. + z**2. - 2.*r*r_d * np.cos(phi_d)
+    cos_gamma = (r - r_d*np.cos(phi_d)) / delta**2.
     ff = ff0 * cos_gamma# * abs_uv
     return ff
 
@@ -142,10 +187,28 @@ def _integrate_dblquad_kernel_z_jitted(phi_d, r_d, r, z, z_0,tau_dr_uv):
         Z integral kernel.
 
     """
-    ff0 = (1. - np.sqrt(6. / r_d)) / r_d ** 2.
+    ff0 = (1. - np.sqrt(6. / r_d)) / r_d**2.
     delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
-    #delta_tau = r**2. + r_d**2. + (z-z_0)**2. - 2.*r*r_d * np.cos(phi_d)
-    #abs_uv = np.exp(-tau_dr_uv * np.sqrt(delta_tau))
+    ff = ff0 * 1. / delta**2.
+    return ff
+
+@jit_integrand
+def _integrate_dblquad_kernel_z_jitted_rel(phi_d, r_d, r, z, z_0,tau_dr_uv):
+    """
+    Z part the radiation force integral.
+
+    Args:
+        phi_d: disc angle integration variable in radians.
+        r_d: disc radius integration variable in Rg.
+        r: disc radius position in Rg
+        z: disc height position in Rg
+
+    Returns:
+        Z integral kernel.
+
+    """
+    ff0 = nt_rel_factors(r_d) / r_d**2.
+    delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
     ff = ff0 * 1. / delta**2.# * abs_uv
     return ff
 
@@ -175,6 +238,38 @@ def qwind_integration_dblquad(r, z, z_0, tau_dr_uv, disk_r_min, disk_r_max):
         opts=[{'points': [0]}, {'points': [r]}])
     z_int, z_error = scipy.integrate.nquad(
         _integrate_dblquad_kernel_z_jitted, ((
+            0, np.pi), (disk_r_min, disk_r_max)),
+        args=(r, z, z_0, tau_dr_uv),
+        opts=[{'points': [0]}, {'points': [r]}])
+    r_int = 2. * z * r_int
+    z_int = 2. * z**2 * z_int
+    return (r_int, z_int, r_error, z_error)
+
+def qwind_integration_rel(r, z, z_0, tau_dr_uv, disk_r_min, disk_r_max):
+    """
+    Double quad integration of the radiation force integral, using the Nquad
+    algorithm. 
+
+    Args:
+        r: position r coordinate in Rg.
+        z: height z coordinate in Rg.
+        r_min: Inner disc integration boundary (usually ISCO).
+        r_max: Outer disc integration boundary (defaults to 1600).
+
+    Returns:
+        4 element tuple
+            0: result of the radial integral.
+            1: result of the z integral.
+            2: error of the radial integral.
+            3: error of the z integral
+    """
+    r_int, r_error = scipy.integrate.nquad(
+        _integrate_dblquad_kernel_r_jitted_rel, ((
+            0, np.pi), (disk_r_min, disk_r_max)),
+        args=(r, z, z_0, tau_dr_uv),
+        opts=[{'points': [0]}, {'points': [r]}])
+    z_int, z_error = scipy.integrate.nquad(
+        _integrate_dblquad_kernel_z_jitted_rel, ((
             0, np.pi), (disk_r_min, disk_r_max)),
         args=(r, z, z_0, tau_dr_uv),
         opts=[{'points': [0]}, {'points': [r]}])

@@ -27,7 +27,7 @@ class Qwind:
                  M=2e8,
                  mdot=0.5,
                  spin=0.,
-                 eta=0.06,
+                 eta=0.057,
                  lines_r_min=200,
                  lines_r_max=1600,
                  disk_r_min=6.,
@@ -290,6 +290,7 @@ class Qwind:
                 #print(tantheta, self.tanthetamax)
 
             self.mdot_w = self.compute_wind_mass_loss()
+            self.kinetic_luminosity = self.compute_wind_kinetic_luminosity()
             return self.lines
         print("multiple cpus")
         niter_array = niter * np.ones(len(self.lines))
@@ -299,6 +300,7 @@ class Qwind:
             self.lines = multiprocessing_pool.starmap(
                 evolve, zip(self.lines, niter_array))
         self.mdot_w = self.compute_wind_mass_loss()
+        self.kinetic_luminosity = self.compute_wind_kinetic_luminosity()
         return self.lines
 
     def compute_wind_mass_loss(self):
@@ -326,6 +328,30 @@ class Qwind:
             mdot_w_total += mdot_w
 
         return mdot_w_total
+    
+    def compute_wind_kinetic_luminosity(self):
+        """
+        Computes wind kinetic luminosity
+        """
+        escaped_mask = []
+        for line in self.lines:
+            escaped_mask.append(line.escaped)
+        escaped_mask = np.array(escaped_mask, dtype=int)
+        wind_exists = False
+        lines_escaped = np.array(self.lines)[escaped_mask == True]
+        if(len(lines_escaped) == 0):
+            return 0
+
+        dR = self.lines_r_range[1] - self.lines_r_range[0]
+        kinetic_total = 0
+        for line in lines_escaped:
+            area = 2 * np.pi * ((line.r_0 + dR/2.)**2. -
+                                (line.r_0 - dR/2.)**2) * self.RG**2.
+            mdot_w = line.rho_0 * const.M_P * line.v_T_0 * const.C * area
+            kl = 0.5 * mdot_w * (const.C * line.v_T_hist[-1])**2
+            kinetic_total += kl
+
+        return kinetic_total 
 
 
 if __name__ == '__main__':

@@ -67,9 +67,11 @@ def save_results(wind, folder_name="Results"):
 
         mdot_w = wind.mdot_w
         mdot_w_msun = mdot_w / constants.M_SUN * 3.154e7  # yr to s
+        kin_lumin = wind.kinetic_luminosity
         with open(os.path.join(folder_name, "mass_loss.csv"), 'w') as f:
             f.write("Wind mass loss: %e [g/s]\n" % mdot_w)
             f.write("Wind mass loss: %e [Msun/yr]" % mdot_w_msun)
+            f.write("Wind kinetic luminosity: %e [erg/s]\n" % kin_lumin)
 
 #        with open(os.path.join(folder_name, "lines.pkl"), "wb") as f:
 #            pickle.dump(wind, f)

@@ -304,8 +304,11 @@ class SimpleSED:
 
         if('old_integral' in self.wind.modes):
             i_aux = integration.qwind_old_integration(r, z)
-        else:
+        if('non_relativistic' in self.wind.modes):
             i_aux = integration.qwind_integration_dblquad(
+                r, z, z_0, tau_dr_uv, self.wind.disk_r_min, self.wind.disk_r_max)
+        else:
+            i_aux = integration.qwind_integration_rel(
                 r, z, z_0, tau_dr_uv, self.wind.disk_r_min, self.wind.disk_r_max)
             error = i_aux[2:4]
             self.int_error_hist.append(error)
