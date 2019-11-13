@@ -31,8 +31,8 @@ class Qwind:
                  lines_r_min=200,
                  lines_r_max=1600,
                  disk_r_min=6.,
-                 disk_r_max=1400,
-                 f_x=None,
+                 disk_r_max=1600,
+                 f_x=0.15,
                  T=2e6,
                  mu=1,
                  modes=[],
@@ -40,7 +40,6 @@ class Qwind:
                  intsteps=1,
                  nr=20,
                  save_dir=None,
-                 radiation_mode="SimpleSED",
                  n_cpus=1):
         """
         Parameters
@@ -97,22 +96,19 @@ class Qwind:
         self.RG = const.G * self.M / (const.C ** 2)  # gravitational radius
 
         self.bol_luminosity = self.mdot * self.eddington_luminosity
-        #self.tau_dr_0 = self.tau_dr(rho_shielding)
         self.v_thermal = self.thermal_velocity(T)
         self.lines_r_min = lines_r_min
         self.lines_r_max = lines_r_max
         self.f_x = f_x
-        if (radiation_mode == "QSOSED"):
-            from qwind.radiation import qsosed
-            self.radiation = qsosed.QSOSED(self)
-        elif (radiation_mode == "SimpleSED"):
-            from qwind.radiation import simple_sed
-            self.radiation = simple_sed.SimpleSED(self)
-        else:
-            print("Unknown radiation module.")
-            sys.exit()
+        # compute initial radii of streamlines
+        dr = (self.lines_r_max - self.lines_r_min) / (nr - 1)
+        self.lines_r_range = [self.lines_r_min +
+                              (i-0.5) * dr for i in range(1, nr+1)]
+        self.r_init = self.lines_r_range[0]
 
-
+        # initialize radiation class
+        self.radiation = simple_sed.SimpleSED(self)
+        
         self.tau_dr_shielding = self.tau_dr(self.rho_shielding)
 
         print("disk_r_min: %f \n disk_r_max: %f" %
@@ -126,28 +122,9 @@ class Qwind:
             except BaseException:
                 pass
 
-        # compute initial radii of streamlines
-        dr = (self.lines_r_max - self.lines_r_min) / (nr - 1)
-        self.lines_r_range = [self.lines_r_min +
-                              (i-0.5) * dr for i in range(1, nr+1)]
-        self.r_init = self.lines_r_min
-
+        
         self.lines = []  # list of streamline objects
         self.lines_hist = []  # save all iterations info
-
-    def norm2d(self, vector):
-        """
-        Norm of a 2D vector.
-        """
-        return np.sqrt(vector[0] ** 2 + vector[-1] ** 2)
-
-    def dist2d(self, x, y):
-        """
-        Distance between vectors x and y in 2D.
-        """
-        dr = y[0] - x[0]
-        dz = y[2] - x[2]
-        return np.sqrt(dr**2 + dz**2)
 
     def v_kepler(self, r):
         """

@@ -23,7 +23,6 @@ wind = wind.Qwind(
     intsteps=1,
     nr=20,
     save_dir=None,
-    radiation_mode="SimpleSED",
     n_cpus=1,
 )
 
@@ -50,31 +49,6 @@ def test_initial_parameters():
     dr = (OUTER_RADIUS - INNER_RADIUS) / (NUM_OF_STREAMLINES - 1)
     assert wind.lines_r_range[0] == (INNER_RADIUS + 0.5 * dr)
     assert wind.lines_r_range[-1] == (INNER_RADIUS + (20 - 0.5) * dr)
-
-
-def test_norm2d():
-    vector = np.array([1, 2, 3])
-    testing.assert_equal(np.sqrt(10), wind.norm2d(vector))
-    vector = np.array([-1, 0, 3])
-    testing.assert_equal(np.sqrt(10), wind.norm2d(vector))
-    vector = np.array([1, 2, -3])
-    testing.assert_equal(np.sqrt(10), wind.norm2d(vector))
-    vector = np.array([1, 3])
-    testing.assert_equal(np.sqrt(10), wind.norm2d(vector))
-
-
-def test_dist2d():
-    vector1 = np.array([1, 2, 3])
-    vector2 = np.array([-2, 0, -1])
-    testing.assert_equal(5, wind.dist2d(vector1, vector2))
-
-    vector1 = np.array([1, 2, 3])
-    vector2 = np.array([-2, 0, -1])
-    testing.assert_equal(5, wind.dist2d(vector2, vector1))
-
-    vector1 = np.array([-1, 0, -3])
-    vector2 = np.array([2, 5, 1])
-    testing.assert_equal(5, wind.dist2d(vector1, vector2))
 
 
 def test_v_kepler():
@@ -124,7 +98,7 @@ def test_line():
 def test_start_lines():
     v_z_0 = 1e5
     niter = 50
-    lines = wind.start_lines(v_z_0, niter)
+    lines = wind.start_lines(v_z_0 = v_z_0, niter = niter)
     assert len(lines) == 20
     assert lines[0].r_hist[0] == wind.lines_r_range[0]
     assert lines[-1].r_hist[0] == wind.lines_r_range[-1]
@@ -134,7 +108,7 @@ def test_start_lines():
 
 
 def test_compute_wind_mass_loss():
-    lines = wind.start_lines(rho=2e8, v_z_0=1e7, niter=0)
+    lines = wind.start_lines(rho_0=2e8, v_z_0=1e7, niter=0)
     line = wind.line(r_0=wind.lines_r_range[2], rho_0=2e8, v_z_0=1e7)
     line.iterate(niter=500000)
     assert line.escaped is True

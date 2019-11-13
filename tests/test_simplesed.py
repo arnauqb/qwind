@@ -23,7 +23,6 @@ radiation = wind.Qwind(
     intsteps=1,
     nr=20,
     save_dir=None,
-    radiation_mode="SimpleSED",
     n_cpus=1,
 ).radiation
 
@@ -31,11 +30,11 @@ radiation = wind.Qwind(
 def test_initial_parameters():
     testing.assert_equal(radiation.wind.lines_r_min, 200)
     testing.assert_equal(radiation.wind.lines_r_max, 1600)
-    testing.assert_approx_equal(radiation.r_x, 282.52791613999176)
-    testing.assert_equal(radiation.uv_fraction, 0.7063101242633767)
-    testing.assert_equal(radiation.xray_fraction, 0.13254291026591006)
+    testing.assert_approx_equal(radiation.r_x, 293.9112153854)
+    testing.assert_equal(radiation.uv_fraction, 0.85)
+    testing.assert_equal(radiation.xray_fraction, 0.15)
     testing.assert_approx_equal(
-        radiation.FORCE_RADIATION_CONSTANT, 0.7025796727022954, significant=6)
+        radiation.FORCE_RADIATION_CONSTANT, 0.845510635175694, significant=6)
     testing.assert_approx_equal(
         radiation.wind.eddington_luminosity, 2.51413032723893e46, significant=6)
     testing.assert_approx_equal(radiation.xray_luminosity,
@@ -50,8 +49,10 @@ def test_optical_depth_uv():
     """
     tau_dr = 2e-3
     tau_dr_0 = 5e-3
-    r_init = radiation.r_init
-    tau_uv_check = tau_dr * (400 - 250) + tau_dr_0 * (250 - r_init)
+    r = 400
+    r_0 = 250
+    r_init = radiation.wind.r_init
+    tau_uv_check = tau_dr * (r - r_0 - radiation.dr/2) + tau_dr_0 * (250 - r_init)
     testing.assert_approx_equal(radiation.optical_depth_uv(
         400, 0, 250, tau_dr, tau_dr_0), tau_uv_check)
     testing.assert_equal(radiation.optical_depth_uv(400, 1, 250, 0, 0), 0.)
@@ -59,14 +60,17 @@ def test_optical_depth_uv():
 
 def test_ionization_parameter():
 
-    r = 100
-    z = 100
+    xray_lumin_backup = radiation.xray_luminosity
+    xray_lumin = 100 
+    radiation.xray_luminosity = xray_lumin
+    r = 3 / radiation.wind.RG
+    z = 4 / radiation.wind.RG 
+    n = 1e6
     tau_x = 0
-    xi1 = radiation.xray_luminosity / 2e8 / \
-        (r**2 + z**2) / radiation.wind.RG**2.
-    testing.assert_approx_equal(xi1, radiation.ionization_parameter(
-        r, z, tau_x, radiation.wind.rho_shielding))
-
+    expected_1 = 4e-6
+    computed_1 = radiation.ionization_parameter(r, z, tau_x, n)
+    radiation.xray_luminosity = xray_lumin_backup 
+    testing.assert_approx_equal(computed_1, expected_1)
 
 def test_critical_ionization_parameter():
     """
@@ -106,7 +110,7 @@ def test_force_radiation():
     z_values = np.linspace(200, 1000)
     for r in r_values:
         for z in z_values:
-            force = radiation.force_radiation(r, z, 1, 1, 1)
+            force = radiation.force_radiation(r, z, 1, 1)
             assert force[0] >= 0, "Negative radial force!"
             assert force[-1] >= 0, "Negative z force!"
 

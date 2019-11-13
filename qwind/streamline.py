@@ -98,7 +98,7 @@ class streamline():
         self.tau_dr_shielding = self.wind.tau_dr(self.wind.rho_shielding)
 
         self.tau_uv = self.radiation.optical_depth_uv(
-            self.r, self.z, self.r_0, self.z_0, self.tau_dr, self.tau_dr_shielding)
+            self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding)
         self.tau_x = self.radiation.optical_depth_x(
             self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding, self.wind.rho_shielding)
 
@@ -188,8 +188,11 @@ class streamline():
         # compute acceleration vector #
         fg = self.force_gravity()
         self.Fgrav.append(fg)
-        fr = self.radiation.force_radiation(
-            self.r, self.z, self.z_0, self.fm, self.tau_dr, self.tau_dr_0, self.tau_uv)
+        fr = self.radiation.force_radiation(self.r,
+                                            self.z,
+                                            self.fm,
+                                            self.tau_uv,
+                                            return_error=False)
         self.a = fg
         if('gravityonly' in self.wind.modes):  # useful for debugging
             self.a += 0.
@@ -227,15 +230,6 @@ class streamline():
         v_T_2 = self.v_T_hist[-1]
         self.sobolev_delta_r= Decimal(np.linalg.norm(np.asarray(
             self.x)[[0, 2]] - np.asarray(self.x_hist[-1])[[0, 2]]))
-        #self.vtot = np.linalg.norm(np.asarray(self.v)[[0,2]])
-        #dvr = self.v_r - self.v_r_hist[-1]
-        #dvz = self.v_z - self.v_z_hist[-1]
-        #dvt = (self.v[0] * dvr + self.v[2] * dvz) / v2
-        # if (abs(dvt) < 0.01 * v2): # catch possible round off numerical error.
-        #    print("hi")
-        #    self.dv_dr = dvt / self.delta_r
-        # else:
-        #    self.dv_dr = (self.vtot - v2) / self.delta_r
         # use decimal to prevent round off error
         dv = min((Decimal(self.v_T) - Decimal(v_T_2)), self.wind.v_thermal)
         self.dv_dr = float(dv) / float(self.sobolev_delta_r)
@@ -256,8 +250,6 @@ class streamline():
         self.v_hist.append(self.v)
         self.Frad.append(fr)
         self.a_hist.append(self.a)
-        # self.dvt_hist.append(dvt)
-        # self.v2_hist.append(v2)
         self.dv_dr_hist.append(self.dv_dr)
         self.v_T_hist.append(self.v_T)
         self.t_hist.append(self.t)
@@ -271,10 +263,8 @@ class streamline():
         self.tau_eff = self.radiation.sobolev_optical_depth(
             self.tau_dr, self.dv_dr)
         tau_eff_max = self.tau_dr * self.d  # abs(self.r - self.r_0)
-        # prevent effective optical depth to grow unphyisically large.
-        #self.tau_eff = min(self.tau_eff, tau_eff_max)
         self.tau_uv = self.radiation.optical_depth_uv(
-            self.r, self.z, self.r_0, self.z_0,  self.tau_dr, self.tau_dr_shielding)
+            self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding)
         self.tau_x = self.radiation.optical_depth_x(
             self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding, self.wind.rho_shielding)
         self.xi = self.radiation.ionization_parameter(

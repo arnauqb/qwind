@@ -6,7 +6,6 @@ import numpy as np
 from scipy import integrate, interpolate, optimize
 
 import qwind.constants as const
-from qsosed import sed
 from qwind import integration
 
 
@@ -18,13 +17,9 @@ class SimpleSED:
 
     def __init__(self, wind):
         self.wind = wind
-        self.wind.f_x = 0.15
-        self.uv_fraction = 0.85
-        self.xray_fraction = 0.15
-        self.lines_r_min = self.wind.lines_r_min
-        self.lines_r_max = self.wind.lines_r_max
-        self.dr = (self.lines_r_max - self.lines_r_min) / (self.wind.nr - 1)
-        self.r_init = self.lines_r_min + 0.5 * self.dr
+        self.xray_fraction = self.wind.f_x 
+        self.uv_fraction = 1 - self.wind.f_x
+        self.dr = (self.wind.lines_r_max - self.wind.lines_r_min) / (self.wind.nr - 1)
         self.wind.tau_dr_0 = self.wind.tau_dr(self.wind.rho_shielding)
         self.xray_luminosity = self.wind.mdot * \
             self.wind.eddington_luminosity * self.xray_fraction
@@ -70,7 +65,7 @@ class SimpleSED:
                 ETAMAX_INTERP_ETAMAX_VALUES[-1]),
             kind='cubic')  # important! xi is log here
 
-    def optical_depth_uv(self, r, z, r_0, z_0, tau_dr, tau_dr_0):
+    def optical_depth_uv(self, r, z, r_0, tau_dr, tau_dr_0):
         """
         UV optical depth.
 
@@ -84,14 +79,12 @@ class SimpleSED:
         Returns:
             UV optical depth at point (r,z) 
         """
-        delta_r_0 = abs(r_0 - self.r_init)
+        delta_r_0 = abs(r_0 - self.wind.r_init)
         delta_r = abs(r - r_0 - self.dr/2)
         distance = np.sqrt(r**2 + z**2)
         sec_theta = distance / r
         tau_uv = sec_theta * (delta_r_0 * tau_dr_0 + delta_r * tau_dr)
         tau_uv = min(tau_uv, 50)
-        #distance = np.sqrt((r-r_0)**2 + (z-z_0)**2)
-        #tau_uv = distance * tau_dr
         assert tau_uv >= 0, "UV optical depth cannot be negative!"
         return tau_uv
 
@@ -110,13 +103,13 @@ class SimpleSED:
             ionization parameter.
         """
         DENSITY_FLOOR = 1e6
-        if r < self.r_init:
+        if r < self.wind.r_init:
             rho_shielding = DENSITY_FLOOR
             tau_x = tau_x / rho_shielding * DENSITY_FLOOR
         distance_2 = r**2. + z**2.
-        xi = self.xray_luminosity * \
-            np.exp(-tau_x) / (rho_shielding *
-                              distance_2 * self.wind.RG**2)  # / 8.2125
+        print(self.xray_luminosity, distance_2 * self.wind.RG**2, rho_shielding)
+        xi = self.xray_luminosity * np.exp(-tau_x) \
+            / (rho_shielding * distance_2 * self.wind.RG**2)
         assert xi > 0, "Ionization parameter cannot be negative!"
         xi += 1e-20  # to avoid overflow
         return xi
@@ -131,7 +124,7 @@ class SimpleSED:
         Returns:
             difference between current ion. parameter and target one.
         """
-        tau_x = max(min(self.wind.tau_dr_0 * (rx - self.r_init), 50), 0)
+        tau_x = max(min(self.wind.tau_dr_0 * (rx - self.wind.r_init), 50), 0)
         xi = self.ionization_parameter(rx, 0, tau_x, self.wind.rho_shielding)
         ionization_difference = const.IONIZATION_PARAMETER_CRITICAL - xi
         return ionization_difference
@@ -190,7 +183,7 @@ class SimpleSED:
         Returns:
             X-Ray optical depth at the point (r,z)
         """
-        tau_x_0 = max(self.r_x - self.r_init,0)
+        tau_x_0 = max(self.r_x - self.wind.r_init,0)
         if (self.r_x < r_0):
             tau_x_0 += max(100 * (r_0 - self.r_x), 0)
         distance = np.sqrt(r ** 2 + z ** 2)
@@ -269,9 +262,6 @@ class SimpleSED:
         Returns:
             fm : force multiplier.
         """
-        #XI_UPPER_LIM = 1e4
-        # if ( xi > XI_UPPER_LIM):
-        #    return 0
         TAU_MAX_TOL = 0.001
         k = self.force_multiplier_k(xi)
         eta_max = self.force_multiplier_eta_max(xi)
@@ -286,7 +276,7 @@ class SimpleSED:
         assert fm >= 0, "Force multiplier cannot be negative!"
         return fm
 
-    def force_radiation(self, r, z, z_0, fm, tau_dr, tau_dr_mean, tau_uv, return_error=False):
+    def force_radiation(self, r, z, fm, tau_uv, return_error=False):
         """
         Computes the radiation force at the point (r,z)
 
@@ -299,17 +289,14 @@ class SimpleSED:
         Returns:
             radiation force at the point (r,z) boosted by fm and attenuated by e^tau_uv.
         """
-
-        tau_dr_uv = min(tau_dr, tau_dr_mean)
-
         if('old_integral' in self.wind.modes):
             i_aux = integration.qwind_old_integration(r, z)
         if('non_relativistic' in self.wind.modes):
             i_aux = integration.qwind_integration_dblquad(
-                r, z, z_0, tau_dr_uv, self.wind.disk_r_min, self.wind.disk_r_max)
+                r, z, self.wind.disk_r_min, self.wind.disk_r_max)
         else:
             i_aux = integration.qwind_integration_rel(
-                r, z, z_0, tau_dr_uv, self.wind.disk_r_min, self.wind.disk_r_max)
+                r, z, self.wind.disk_r_min, self.wind.disk_r_max)
             error = i_aux[2:4]
             self.int_error_hist.append(error)
 
