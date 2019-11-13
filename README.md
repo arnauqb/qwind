@@ -18,12 +18,11 @@ Getting started
 Prerequisites
 -------------
 
-The required Python modules are
+The required Python modules are list in ``requirements.txt`` file and are automatically installed if you follow a pip installation. To manually install them, just run
 
-``
-scipy
-numba
-``
+```
+pip install -r requirements.txt
+```
 
 Installing
 ----------
