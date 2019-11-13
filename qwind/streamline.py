@@ -317,7 +317,7 @@ class streamline():
             self.it = it
             self.iter.append(it)
 
-            if (it == 99):
+            if ((it == 99) or (it == 9999) or (it == 99999)):
                 # update time step  at 100 iterations#
                 self.dt = self.dt * 10.
 
