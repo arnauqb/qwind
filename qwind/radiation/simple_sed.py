@@ -107,7 +107,6 @@ class SimpleSED:
             rho_shielding = DENSITY_FLOOR
             tau_x = tau_x / rho_shielding * DENSITY_FLOOR
         distance_2 = r**2. + z**2.
-        print(self.xray_luminosity, distance_2 * self.wind.RG**2, rho_shielding)
         xi = self.xray_luminosity * np.exp(-tau_x) \
             / (rho_shielding * distance_2 * self.wind.RG**2)
         assert xi > 0, "Ionization parameter cannot be negative!"
