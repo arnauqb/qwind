@@ -200,7 +200,9 @@ class streamline():
             self.a += fr
 
         self.a[0] += self.l**2 / self.r**3  # centrifugal term
-
+        if "debug_mode" in self.wind.modes:
+            self.a[0] = 1e-8 + 1e-5 * (self.t/25000) + (self.t**2 / np.sqrt(25000))
+            self.a[-1] = 1e-8 + 1e-5 * (self.t/25000) + (self.t**2 / np.sqrt(25000))
         # update r #
         rnew = self.r + self.v_r * self.dt + 0.5 * self.a[0] * self.dt**2
         vrnew = self.v_r + self.a[0] * self.dt
@@ -232,7 +234,7 @@ class streamline():
             self.x)[[0, 2]] - np.asarray(self.x_hist[-1])[[0, 2]]))
         # use decimal to prevent round off error
         dv = min((Decimal(self.v_T) - Decimal(v_T_2)), self.wind.v_thermal)
-        self.dv_dr = float(dv) / float(self.sobolev_delta_r)
+        self.dv_dr = abs(float(dv) / float(self.sobolev_delta_r))
 
         # finally update time #
         self.t = self.t + self.dt
@@ -312,7 +314,7 @@ class streamline():
                 self.dt = self.dt * 10.
 
             # termination condition for a failed wind #
-            if(((self.z <= self.z_0) and (self.v_z < 0.0)) or ((self.z <  np.max(self.z_hist)) and (self.v_z < 0.0))):
+            if(((self.z <= self.z_0) and (self.v_z < 0.0))):# or ((self.z <  np.max(self.z_hist)) and (self.v_z < 0.0))):
                 print("Failed wind! \n")
                 break
 
@@ -326,7 +328,7 @@ class streamline():
             #if(self.escaped and a_t < 1e-8):
             #    print("Wind escaped")
             #    break
-            if(self.d > 100000):
+            if(self.d > 5000):
                 print("out of grid \n")
                 break
 
