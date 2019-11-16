@@ -213,8 +213,10 @@ class Qwind:
             temperature = self.radiation.sed_class.disk_nt_temperature4(r_0)**(1./4.)
             v_z_0  = self.thermal_velocity(temperature) * const.C
             rho_0 = self.radiation.sed_class.disk_number_density(r_0)
-
-        from qwind.streamline import streamline
+        if "rk4" in self.modes:
+            from qwind.streamline_rk4 import streamline
+        else:
+            from qwind.streamline import streamline
         return streamline(
             self.radiation,
             wind=self,
