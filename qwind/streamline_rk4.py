@@ -22,6 +22,7 @@ if(backend == 'jupyter'):
 else:
     tqdm = tqdm_dump
 
+tqdm = tqdm_dump
 
 class streamline():
     """
@@ -66,17 +67,14 @@ class streamline():
         ## all positions are in units of Rg, all velocities in units of c. ##
         self.dt = dt  # units of  Rg / c
         self.r = r_0
-        self.r_previous = self.r
         self.phi = 0
         self.z = z_0
-        self.z_previous = self.z
         self.x = [self.r, self.phi, self.z]
         self.d = np.sqrt(self.r**2 + self.z**2)
         self.t = 0  # in seconds
         self.r_0 = r_0
         self.z_0 = z_0
         self.v_r = v_r_0 / const.C
-        self.v_r_previous = self.v_r
         self.v_r_0 = v_r_0 / const.C
         self.v_r_hist = [self.v_r]
         self.v_phi = self.wind.v_kepler(r_0)
@@ -84,11 +82,9 @@ class streamline():
         self.v_phi_0 = self.v_phi
         self.v_z_0 = v_z_0 / const.C
         self.v_z = self.v_z_0
-        self.v_z_previous = self.v_z
         self.v = [self.v_r, self.v_phi, self.v_z]
         self.v_T_0 = np.sqrt(self.v_z ** 2 + self.v_r ** 2)
         self.v_T = self.v_T_0
-        self.v_T_previous = self.v_T
         self.v_esc = self.wind.v_esc(self.d)
         self.v_esc_hist = [self.v_esc]
         self.dv_dr = 0
@@ -168,17 +164,17 @@ class streamline():
         rho = self.rho_0 * radial * v_ratio
         return rho
 
-    def compute_velocity_gradient(self, x_0, x_1, v_T_0, v_T_1):
-        """
-        Computes dv/dl
-        """
-        delta_l = Decimal(np.linalg.norm(x_1 - x_0))
-        dv = Decimal(v_T_1) - Decimal(v_T_0)
-        try:
-            dv_dr = abs(float(dv / delta_l))
-        except DivisionByZero:
-            return 0
-        return dv_dr
+    #def compute_velocity_gradient(self, x_0, x_1, v_T_0, v_T_1):
+    #    """
+    #    Computes dv/dl
+    #    """
+    #    delta_l = Decimal(np.linalg.norm(x_1 - x_0))
+    #    dv = Decimal(v_T_1) - Decimal(v_T_0)
+    #    try:
+    #        dv_dr = abs(float(dv / delta_l))
+    #    except DivisionByZero:
+    #        return 0
+    #    return dv_dr
 
     def force_gravity(self, r, z):
         """
@@ -188,34 +184,60 @@ class streamline():
             grav: graviational force per unit mass in units of c^2 / Rg.
         """
         d = np.sqrt(r**2 + z**2)
-        array = np.asarray([r / d, 0., z / d])
+        array = np.asarray([r / d, z / d])
         grav = - 1. / (d**2) * array
         return grav
 
    ## kinematics ##
 
-    def rk4_ydot(self, t, y):  # , v_T, r_previous, z_previous, v_T_previous):
+    def rk4_ydot(self, t, y):  
 
         r, z, v_r, v_z = y
-        self.v_T = np.sqrt(r**2 + z**2)
-        self.update_radiation(r, z, self.v_T, self.r_previous,
-                              self.z_previous, self.v_T_previous)
+        try:
+            assert r > 0
+            assert z > 0
+        except:
+            self.end_line = True
+            return [0,0,0,0]
+        #print(t,y)
+        v_T = np.sqrt(v_r**2 + v_z**2)
+        #self.update_radiation(r, z, self.v_T)
+        #print(f"a : {self.a} \n v_T: {self.v_T} \n dv_dr: {self.dv_dr} \n \n")
         fg = self.force_gravity(r, z)
-        fr = self.radiation.force_radiation(r, z, self.fm, self.tau_uv)
-        self.a = fg
-        self.a[0] += self.l**2 / r**3
+        fr = self.radiation.force_radiation(r, z, 0, 0)[[0,2]]
+        a = fg
+        a[0] += self.l**2 / r**3
         if "gravityonly" not in self.wind.modes:
-            self.a += fr
+            a += fr
         if "debug_mode" in self.wind.modes:
-            self.a[0] = 1e-8 + 1e-5 * (t/25000) + (t**2 / np.sqrt(25000))
-            self.a[-1] = 1e-8 + 1e-5 * (t/25000) + (t**2 / np.sqrt(25000))
-        return [v_r, v_z, self.a[0], self.a[-1]]
+            a[0] = 1e-8 + 1e-5 * (t/25000) + (t**2 / np.sqrt(25000))
+            a[1] = 1e-8 + 1e-5 * (t/25000) + (t**2 / np.sqrt(25000))
+        # refine fm estimation
+        #dv_dr = a / 
+        #try:
+        #    print(self.solver.step_size)
+        #except:
+        #    pass
+        #tau_eff = self.radiation.sobolev_optical_depth()
+        #try:
+        #    v_r_estimate = v_r +  self.solver.step_size * a[0]
+        #    v_z_estimate = v_z + self.solver.step_size * a[1]
+        #    v_T_estimate = np.sqrt(v_r_estimate**2 + v_z_estimate**2)
+        #    a_estimate = np.sqrt(a[0]**2 + a[1]**2)
+        #    self.update_radiation(r,z, v_T_estimate, a_estimate)
+        #    #print(np.sqrt(self.a[0]**2 + self.a[1]**2), a_estimate)
+        #except:
+        #    self.update_radiation(r, z, v_T, 0)
+        a_T = np.sqrt(a[0]**2 + a[1]**2)
+        self.update_radiation(r, z, v_T, a_T)
+        a = a - fr + fr * np.exp(-self.tau_uv) * ( 1 + self.fm)
+        return [v_r, v_z, a[0], a[1]]
 
     def initialize_ode_solver(self):
         t_0 = 0
         y_0 = [self.r_0, self.z_0, self.v_r_0, self.v_z_0]
-        delta_t_0 = 0.1 * self.wind.RG/const.C
-        delta_t_max = np.inf#1000 * delta_t_0
+        delta_t_0 = 0.4096 * self.wind.RG/const.C
+        delta_t_max = 1000 * delta_t_0
         solver = integrate.RK45(fun=self.rk4_ydot, t0=t_0, y0=y_0, t_bound=50000000 *
                                 self.wind.RG/const.C, first_step =delta_t_0, max_step=delta_t_max)
         return solver
@@ -236,17 +258,15 @@ class streamline():
         self.fm_hist.append(self.fm)
         self.dv_dr_hist.append(self.dv_dr)
 
-    def update_radiation(self, r, z, v_T, r_previous, z_previous, v_T_previous):
+    def update_radiation(self, r, z, v_T, a_T):
         """
         Updates all parameters related to the radiation field, given the new streamline position.
         """
-        x_0 = np.array([r, z])
-        x_1 = np.array([r_previous, z_previous])
         self.rho = self.update_density(r, z, v_T)
         self.tau_dr = self.wind.tau_dr(self.rho)
         #self.dv_dr = self.compute_velocity_gradient(
-        #    x_0, x_1, v_T, v_T_previous)
-        self.dv_dr = np.sqrt(self.a[0]**2 + self.a[-1]**2) / self.v_T
+        #    x_0, x_1, v_T)
+        self.dv_dr = a_T / v_T
         self.tau_eff = self.radiation.sobolev_optical_depth(
             self.tau_dr, self.dv_dr)
         if self.tau_eff == np.inf:
@@ -259,15 +279,6 @@ class streamline():
             r, z, self.tau_x, self.rho)
         self.fm = self.radiation.force_multiplier(self.tau_eff, self.xi)
 
-    def step(self, r, z):
-        """
-        Performs time step.
-        """
-        # update positions and velocities #
-        self.update_positions()
-        # update radiation field #
-        self.update_radiation(r, z)
-
     def iterate(self, niter=5000):
         """
         Iterates the streamline
@@ -279,32 +290,36 @@ class streamline():
         self.solver = self.initialize_ode_solver()
         y_0 = [self.r_0, self.z_0, self.v_r_0, self.v_z_0]
         self.y_hist = [y_0]
+        self.end_line = False
         for it in tqdm(range(0, niter)):
             self.solver.step()
+            if self.end_line:
+                print("Line ended because unphysical result.")
+                break
             r, z, v_r, v_z = self.solver.y
             self.t_hist.append(self.solver.t)
             self.a = self.rk4_ydot(self.solver.t, self.solver.y)[2:4]
             self.a_hist.append(self.a)
+            a_T = np.sqrt(self.a[0]**2 + self.a[1]**2)
             self.v_T = np.sqrt(v_r**2 + v_z**2)
-            self.update_radiation(r, z, self.v_T, self.r_previous, self.z_previous, self.v_T_previous)
+            self.update_radiation(r, z, self.v_T, a_T)
             self.save_hist(r, z, v_r, v_z)
-            self.r_previous = r
-            self.z_previous = z
-            self.v_T_previous = self.v_T
             # print(self.solver.step_size)
-            v_esc = self.wind.v_esc(self.d)
+            d = np.sqrt(r**2 + z**2)
+            v_esc = self.wind.v_esc(d)
             self.v_esc_hist.append(v_esc)
             # record number of iterations #
             self.it = it
             self.iter.append(it)
 
-            if ((it == 99) or (it == 9999) or (it == 99999)):
-                # update time step  at 100 iterations#
-                self.dt = self.dt * 10.
+            #if ((it == 99) or (it == 9999) or (it == 99999)):
+            #    # update time step  at 100 iterations#
+            #    self.dt = self.dt * 10.
 
             # termination condition for a failed wind #
             # or ((z <  np.max(self.z_hist)) and (v_z < 0.0))):
-            if(((z <= self.z_0) and (v_z < 0.0))):
+            #if(((z <= self.z_0) and (v_z < 0.0))):
+            if(((z <= self.z_0) and (v_z < 0.0))): #or ((z < np.max(self.z_hist)) and (v_z < 0.0))):
                 print("Failed wind! \n")
                 break
 
@@ -313,8 +328,7 @@ class streamline():
                 self.escaped = True
                 print("escape velocity reached.")
 
-            d = np.sqrt(r**2 + z**2)
-            if(d > 5000):
+            if(d > 5000 and self.escaped):
                 print("line escaped\n")
                 break
         self.solver_output = self.solver.dense_output()

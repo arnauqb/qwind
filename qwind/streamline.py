@@ -201,8 +201,10 @@ class streamline():
 
         self.a[0] += self.l**2 / self.r**3  # centrifugal term
         if "debug_mode" in self.wind.modes:
-            self.a[0] = 1e-8 + 1e-5 * (self.t/25000) + (self.t**2 / np.sqrt(25000))
-            self.a[-1] = 1e-8 + 1e-5 * (self.t/25000) + (self.t**2 / np.sqrt(25000))
+            self.a[0] = 1e-8 + 1e-5 * \
+                (self.t/25000) + (self.t**2 / np.sqrt(25000))
+            self.a[-1] = 1e-8 + 1e-5 * \
+                (self.t/25000) + (self.t**2 / np.sqrt(25000))
         # update r #
         rnew = self.r + self.v_r * self.dt + 0.5 * self.a[0] * self.dt**2
         vrnew = self.v_r + self.a[0] * self.dt
@@ -230,7 +232,7 @@ class streamline():
 
         # compute dv_dr #
         #v_T_2 = self.v_T_hist[-1]
-        #self.sobolev_delta_r= Decimal(np.linalg.norm(np.asarray(
+        # self.sobolev_delta_r= Decimal(np.linalg.norm(np.asarray(
         #    self.x)[[0, 2]] - np.asarray(self.x_hist[-1])[[0, 2]]))
         # use decimal to prevent round off error
         #dv = min((Decimal(self.v_T) - Decimal(v_T_2)), self.wind.v_thermal)
@@ -300,10 +302,12 @@ class streamline():
             niter : Number of iterations
         """
         print(' ', end='', flush=True)
-        stalling_timer=0
+        stalling_timer = 0
 
         for it in tqdm(range(0, niter)):
             self.step()
+            # print(f"{self.t}")
+            #print(f"a : {self.a} \n v_T: {self.v_T} \n dv_dr: {self.dv_dr} \n\n")
             v_esc = self.wind.v_esc(self.d)
             self.v_esc_hist.append(v_esc)
             # record number of iterations #
@@ -315,7 +319,7 @@ class streamline():
                 self.dt = self.dt * 10.
 
             # termination condition for a failed wind #
-            if(((self.z <= self.z_0) and (self.v_z < 0.0))):# or ((self.z <  np.max(self.z_hist)) and (self.v_z < 0.0))):
+            if(((self.z <= self.z_0) and (self.v_z < 0.0)) or ((self.z < np.max(self.z_hist)) and (self.v_z < 0.0))):
                 print("Failed wind! \n")
                 break
 
@@ -326,15 +330,15 @@ class streamline():
             a_t = np.sqrt(self.a[0]**2 + self.a[2]**2)
 
             #termination condition for an escaped wind #
-            #if(self.escaped and a_t < 1e-8):
+            # if(self.escaped and a_t < 1e-8):
             #    print("Wind escaped")
             #    break
             if(self.d > 5000):
                 print("out of grid \n")
                 break
 
-            #check line stalling
-            #if self.v_z - self.v_th < 1e-5:
+            # check line stalling
+            # if self.v_z - self.v_th < 1e-5:
             #    self.r, self.phi, self.z = self.x_hist[-2]
             #    self.v_r, self.v_phi, self.v_z = self.v_hist[-2]
             #    self.x = self.x_hist[-2]
@@ -351,6 +355,5 @@ class streamline():
             #    if stalling_timer == 4:
             #        print("Line stalled, terminating")
             #        break
-            #else:
+            # else:
             #    stalling_timer = 0
-

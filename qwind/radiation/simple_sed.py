@@ -85,7 +85,11 @@ class SimpleSED:
         sec_theta = distance / r
         tau_uv = sec_theta * (delta_r_0 * tau_dr_0 + delta_r * tau_dr)
         tau_uv = min(tau_uv, 50)
-        assert tau_uv >= 0, "UV optical depth cannot be negative!"
+        try:
+            assert tau_uv >= 0, "UV optical depth cannot be negative!"
+        except AssertionError:
+            print(f"r: {r} \n z : {z} \n r_0 : {r_0}\n tau_dr: {tau_dr} \n tau_dr_0: {tau_dr_0} \n\n")
+            raise AssertionError 
         return tau_uv
 
     def ionization_parameter(self, r, z, tau_x, rho_shielding):
