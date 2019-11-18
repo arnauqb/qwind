@@ -8,6 +8,7 @@ from qwind import utils
 from decimal import Decimal, DivisionByZero
 from qwind import constants as const
 import pickle
+import rk4_integrator
 
 # check backend to import appropiate progress bar #
 
@@ -55,6 +56,9 @@ class streamline():
         """
         self.wind = wind
         self.radiation = radiation_class
+        if "debug_mode" in self.wind.modes:
+            self.streamline_pos = np.loadtxt("streamline.txt")
+            print(self.streamline_pos)
 
         # black hole and disc variables #
         self.a = np.array([0, 0])  # / u.s**2
@@ -190,56 +194,35 @@ class streamline():
 
    ## kinematics ##
 
-    def rk4_ydot(self, t, y):  
+    def rk4_ydot(self, t, y): # y is (r,z, v_r, v_z)
 
         r, z, v_r, v_z = y
-        try:
-            assert r > 0
-            assert z > 0
-        except:
-            self.end_line = True
-            return [0,0,0,0]
-        #print(t,y)
         v_T = np.sqrt(v_r**2 + v_z**2)
         #self.update_radiation(r, z, self.v_T)
         #print(f"a : {self.a} \n v_T: {self.v_T} \n dv_dr: {self.dv_dr} \n \n")
         fg = self.force_gravity(r, z)
         fr = self.radiation.force_radiation(r, z, 0, 0)[[0,2]]
+        fr_approx = fr * (1 + self.fm_hist[-1]) * np.exp(-self.tau_uv_hist[-1])
+        centrifugal_term = self.l**2 / r**3
         a = fg
-        a[0] += self.l**2 / r**3
+        a[0] +=  centrifugal_term
         if "gravityonly" not in self.wind.modes:
-            a += fr
-        if "debug_mode" in self.wind.modes:
-            a[0] = 1e-8 + 1e-5 * (t/25000) + (t**2 / np.sqrt(25000))
-            a[1] = 1e-8 + 1e-5 * (t/25000) + (t**2 / np.sqrt(25000))
-        # refine fm estimation
-        #dv_dr = a / 
-        #try:
-        #    print(self.solver.step_size)
-        #except:
-        #    pass
-        #tau_eff = self.radiation.sobolev_optical_depth()
-        #try:
-        #    v_r_estimate = v_r +  self.solver.step_size * a[0]
-        #    v_z_estimate = v_z + self.solver.step_size * a[1]
-        #    v_T_estimate = np.sqrt(v_r_estimate**2 + v_z_estimate**2)
-        #    a_estimate = np.sqrt(a[0]**2 + a[1]**2)
-        #    self.update_radiation(r,z, v_T_estimate, a_estimate)
-        #    #print(np.sqrt(self.a[0]**2 + self.a[1]**2), a_estimate)
-        #except:
-        #    self.update_radiation(r, z, v_T, 0)
+            a += fr_approx
+        #if "debug_mode" in self.wind.modes:
+        #    a[0] = 1e-8 + 1e-5 * (t/25000) + (t**2 / np.sqrt(25000))
+        #    a[1] = 1e-8 + 1e-5 * (t/25000) + (t**2 / np.sqrt(25000))
         a_T = np.sqrt(a[0]**2 + a[1]**2)
         self.update_radiation(r, z, v_T, a_T)
-        a = a - fr + fr * np.exp(-self.tau_uv) * ( 1 + self.fm)
+        if "gravityonly" not in self.wind.modes:
+            a = a - fr_approx + fr * np.exp(-self.tau_uv) * (1 + self.fm)
         return [v_r, v_z, a[0], a[1]]
 
     def initialize_ode_solver(self):
         t_0 = 0
         y_0 = [self.r_0, self.z_0, self.v_r_0, self.v_z_0]
-        delta_t_0 = 0.4096 * self.wind.RG/const.C
-        delta_t_max = 1000 * delta_t_0
-        solver = integrate.RK45(fun=self.rk4_ydot, t0=t_0, y0=y_0, t_bound=50000000 *
-                                self.wind.RG/const.C, first_step =delta_t_0, max_step=delta_t_max)
+        delta_t_0 = 0.1#0.4096 #* self.wind.RG/const.C
+        delta_t_max = 1000#np.inf#100#100 #10 * delta_t_0
+        solver = integrate.RK45(fun=self.rk4_ydot, t0=t_0, y0=y_0, t_bound=np.inf, first_step =delta_t_0, max_step=delta_t_max)
         return solver
 
     def save_hist(self, r, z, v_r, v_z):
@@ -269,8 +252,8 @@ class streamline():
         self.dv_dr = a_T / v_T
         self.tau_eff = self.radiation.sobolev_optical_depth(
             self.tau_dr, self.dv_dr)
-        if self.tau_eff == np.inf:
-            self.tau_eff = 1
+        #if self.tau_eff == np.inf:
+        #    self.tau_eff = 1
         self.tau_uv = self.radiation.optical_depth_uv(
             r, z, self.r_0, self.tau_dr, self.tau_dr_shielding)
         self.tau_x = self.radiation.optical_depth_x(
@@ -296,11 +279,15 @@ class streamline():
             if self.end_line:
                 print("Line ended because unphysical result.")
                 break
+            if "debug_mode" in self.wind.modes:
+                r, z, v_r, v_z = self.streamline_pos[it]
+                self.solver.y = np.array([r,z,v_r,v_z])
             r, z, v_r, v_z = self.solver.y
             self.t_hist.append(self.solver.t)
             self.a = self.rk4_ydot(self.solver.t, self.solver.y)[2:4]
             self.a_hist.append(self.a)
             a_T = np.sqrt(self.a[0]**2 + self.a[1]**2)
+            self.a_T = a_T
             self.v_T = np.sqrt(v_r**2 + v_z**2)
             self.update_radiation(r, z, self.v_T, a_T)
             self.save_hist(r, z, v_r, v_z)
@@ -319,7 +306,7 @@ class streamline():
             # termination condition for a failed wind #
             # or ((z <  np.max(self.z_hist)) and (v_z < 0.0))):
             #if(((z <= self.z_0) and (v_z < 0.0))):
-            if(((z <= self.z_0) and (v_z < 0.0))): #or ((z < np.max(self.z_hist)) and (v_z < 0.0))):
+            if(((z <= self.z_0) and (v_z < 0.0)) or ((z < np.max(self.z_hist)) and (v_z < 0.0))):
                 print("Failed wind! \n")
                 break
 

@@ -229,15 +229,16 @@ class streamline():
 
         # total velocity #
         self.v_T = np.sqrt(self.v_r ** 2 + self.v_z**2)
-
+        if "dv_dr" in self.wind.modes:
         # compute dv_dr #
-        #v_T_2 = self.v_T_hist[-1]
-        # self.sobolev_delta_r= Decimal(np.linalg.norm(np.asarray(
-        #    self.x)[[0, 2]] - np.asarray(self.x_hist[-1])[[0, 2]]))
-        # use decimal to prevent round off error
-        #dv = min((Decimal(self.v_T) - Decimal(v_T_2)), self.wind.v_thermal)
-        #self.dv_dr = abs(float(dv) / float(self.sobolev_delta_r))
-        self.dv_dr = np.sqrt(self.a[0]**2 + self.a[-1]**2) / self.v_T
+            v_T_2 = self.v_T_hist[-1]
+            self.sobolev_delta_r = Decimal(np.linalg.norm(np.asarray(
+                self.x)[[0, 2]] - np.asarray(self.x_hist[-1])[[0, 2]]))
+            # use decimal to prevent round off error
+            dv = min((Decimal(self.v_T) - Decimal(v_T_2)), self.wind.v_thermal)
+            self.dv_dr = abs(float(dv) / float(self.sobolev_delta_r))
+        else:
+            self.dv_dr = np.sqrt(self.a[0]**2 + self.a[-1]**2) / self.v_T
 
         # finally update time #
         self.t = self.t + self.dt
@@ -319,7 +320,7 @@ class streamline():
                 self.dt = self.dt * 10.
 
             # termination condition for a failed wind #
-            if(((self.z <= self.z_0) and (self.v_z < 0.0)) or ((self.z < np.max(self.z_hist)) and (self.v_z < 0.0))):
+            if(((self.z <= self.z_0) and (self.v_z < 0.0))):# or ((self.z < np.max(self.z_hist)) and (self.v_z < 0.0))):
                 print("Failed wind! \n")
                 break
 

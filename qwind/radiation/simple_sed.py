@@ -85,6 +85,9 @@ class SimpleSED:
         sec_theta = distance / r
         tau_uv = sec_theta * (delta_r_0 * tau_dr_0 + delta_r * tau_dr)
         tau_uv = min(tau_uv, 50)
+        if tau_uv < 0:
+            print("warning")
+        tau_uv = max(tau_uv,0)
         try:
             assert tau_uv >= 0, "UV optical depth cannot be negative!"
         except AssertionError:
@@ -276,7 +279,8 @@ class SimpleSED:
             aux = ((1. + tau_max)**(1. - alpha) - 1.) / \
                 ((tau_max) ** (1. - alpha))
         fm = k * t**(-alpha) * aux
-        assert fm >= 0, "Force multiplier cannot be negative!"
+        #assert fm >= 0, "Force multiplier cannot be negative!"
+        fm = max(0,fm)
         return fm
 
     def force_radiation(self, r, z, fm, tau_uv, return_error=False):
