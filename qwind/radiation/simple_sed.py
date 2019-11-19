@@ -198,6 +198,10 @@ class SimpleSED:
         tau_x = sec_theta * (tau_dr_0 * tau_x_0 + tau_dr *
                              self.opacity_x_r(r) * delta_r)
         tau_x = min(tau_x, 50)
+        if tau_x < 0:
+            print("warning")
+        tau_x = max(tau_x,0)
+
         assert tau_x >= 0, "X-Ray optical depth cannot be negative!"
         return tau_x
 

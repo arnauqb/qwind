@@ -39,7 +39,9 @@ class streamline():
             T=2e6,
             v_z_0=1e7,
             v_r_0=0.,
-            dt=1000,#4.096 / 10.
+            dt=np.inf,#4.096 / 10.
+            rtol=1e-7,
+            atol=[1e-6,1e-6,1e-6,1e-6],
     ):
         """
         Args:
@@ -59,6 +61,8 @@ class streamline():
             self.streamline_pos = np.loadtxt("streamline.txt")
             print(self.streamline_pos)
 
+        self.rtol = rtol
+        self.atol = atol
         # black hole and disc variables #
         self.a = np.array([0, 0])  # / u.s**2
         self.T = T  # * u.K
@@ -221,7 +225,7 @@ class streamline():
         y_0 = [self.r_0, self.z_0, self.v_r_0, self.v_z_0]
         delta_t_0 = 0.1#0.4096 #* self.wind.RG/const.C
         delta_t_max = self.dt #np.inf#100#100 #10 * delta_t_0
-        solver = integrate.RK45(fun=self.rk4_ydot, t0=t_0, y0=y_0, t_bound=np.inf, first_step =delta_t_0, max_step=delta_t_max, rtol=1e-4, atol=np.array([1e-12,1e-12,1e-12,1e-12]))
+        solver = integrate.RK45(fun=self.rk4_ydot, t0=t_0, y0=y_0, t_bound=np.inf, first_step =delta_t_0, max_step=delta_t_max, rtol=self.rtol, atol=self.atol)#, atol=np.array([1e-12,1e-12,1e-15,1e-15]))
         return solver
 
     def save_hist(self, r, z, v_r, v_z):
@@ -301,8 +305,9 @@ class streamline():
 
             # termination condition for a failed wind #
             # or ((z <  np.max(self.z_hist)) and (v_z < 0.0))):
-            #if(((z <= self.z_0) and (v_z < 0.0))):
-            if(((z <= self.z_0) and (v_z < 0.0)) or ((z < np.max(self.z_hist)) and (v_z < 0.0))):
+            failed_condition_1 = (z <= self.z_0) and (v_z < 0.)
+            failed_condition_2 = (z < np.max(self.z_hist) and (v_z < 0))
+            if failed_condition_1 or failed_condition_2:# or failed_condition_3:
                 print("Failed wind! \n")
                 break
 
@@ -311,7 +316,7 @@ class streamline():
                 self.escaped = True
                 print("escape velocity reached.")
 
-            if(d > 5000 and self.escaped):
+            if(d > 100000 and self.escaped):
                 print("line escaped\n")
                 break
         self.solver_output = self.solver.dense_output()

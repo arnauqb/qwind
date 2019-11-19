@@ -41,16 +41,18 @@ def save_results(wind, folder_name="Results"):
     for i, line in enumerate(wind.lines):
         line_name = "line_%02d" % i
         lines_file = os.path.join(folder_name, line_name + ".csv")
+        a_hist = np.array(line.a_hist)
         data = {
             'R': line.r_hist,
-            'P': line.phi_hist,
+            #'P': line.phi_hist,
             'Z': line.z_hist,
-            'X': line.x_hist,
+            #'X': line.x_hist,
             'V_R': line.v_r_hist,
-            'V_PHI': line.v_phi_hist,
+            #'V_PHI': line.v_phi_hist,
             'V_Z': line.v_z_hist,
             'V_T': line.v_T_hist,
-            'a': line.a_hist,
+            'a_r': a_hist[:,0],
+            'a_z': a_hist[:,-1],
             'rho': line.rho_hist,
             'xi': line.xi_hist,
             'fm': line.fm_hist,
@@ -58,10 +60,11 @@ def save_results(wind, folder_name="Results"):
             'tau_uv': line.tau_uv_hist,
             'tau_x': line.tau_x_hist,
             'dv_dr': line.dv_dr_hist,
-            'dr_e': line.dr_e_hist,
             'escaped': line.escaped * np.ones(len(line.rho_hist)),
             'V_esc': line.v_esc_hist,
         }
+        for key in data.keys():
+            print(key, len(data[key]))
         df = pd.DataFrame.from_dict(data)
         df.to_csv(lines_file, index=False)
 

@@ -187,6 +187,7 @@ class Qwind:
              v_r_0=0.,
              v_z_0=1e7,
              dt=4.096 / 10.,
+             **kwargs,
              ):
         """
         Initialises a streamline object.
@@ -227,9 +228,10 @@ class Qwind:
             v_r_0=v_r_0,
             v_z_0=v_z_0,
             dt=dt,
+            **kwargs,
         )
 
-    def start_lines(self, derive_from_ss=False, v_z_0=1e7, niter=5000, rho_0=2e8, z_0=1, dt=4.096/10):
+    def start_lines(self, derive_from_ss=False, v_z_0=1e7, niter=5000, rho_0=2e8, z_0=1, dt=4.096/10, **kwargs):
         """
         Starts and evolves a set of equally spaced streamlines.
 
@@ -252,6 +254,7 @@ class Qwind:
                                         rho_0=rho_0,
                                         z_0=z_0,
                                         dt = dt,
+                                        **kwargs,
                                         ))
         i = 0
         if(self.n_cpus == 1):

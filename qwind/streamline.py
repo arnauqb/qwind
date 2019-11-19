@@ -320,7 +320,7 @@ class streamline():
                 self.dt = self.dt * 10.
 
             # termination condition for a failed wind #
-            if(((self.z <= self.z_0) and (self.v_z < 0.0))):# or ((self.z < np.max(self.z_hist)) and (self.v_z < 0.0))):
+            if(((self.z <= self.z_0) and (self.v_z < 0.0)) or ((self.z < np.max(self.z_hist)) and (self.v_z < 0.0))):
                 print("Failed wind! \n")
                 break
 
