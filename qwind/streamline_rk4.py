@@ -8,7 +8,6 @@ from qwind import utils
 from decimal import Decimal, DivisionByZero
 from qwind import constants as const
 import pickle
-import rk4_integrator
 
 # check backend to import appropiate progress bar #
 
@@ -40,7 +39,7 @@ class streamline():
             T=2e6,
             v_z_0=1e7,
             v_r_0=0.,
-            dt=4.096 / 10.
+            dt=1000,#4.096 / 10.
     ):
         """
         Args:
@@ -221,8 +220,8 @@ class streamline():
         t_0 = 0
         y_0 = [self.r_0, self.z_0, self.v_r_0, self.v_z_0]
         delta_t_0 = 0.1#0.4096 #* self.wind.RG/const.C
-        delta_t_max = 1000#np.inf#100#100 #10 * delta_t_0
-        solver = integrate.RK45(fun=self.rk4_ydot, t0=t_0, y0=y_0, t_bound=np.inf, first_step =delta_t_0, max_step=delta_t_max)
+        delta_t_max = self.dt #np.inf#100#100 #10 * delta_t_0
+        solver = integrate.RK45(fun=self.rk4_ydot, t0=t_0, y0=y_0, t_bound=np.inf, first_step =delta_t_0, max_step=delta_t_max, rtol=1e-4, atol=np.array([1e-12,1e-12,1e-12,1e-12]))
         return solver
 
     def save_hist(self, r, z, v_r, v_z):
@@ -276,9 +275,6 @@ class streamline():
         self.end_line = False
         for it in tqdm(range(0, niter)):
             self.solver.step()
-            if self.end_line:
-                print("Line ended because unphysical result.")
-                break
             if "debug_mode" in self.wind.modes:
                 r, z, v_r, v_z = self.streamline_pos[it]
                 self.solver.y = np.array([r,z,v_r,v_z])
