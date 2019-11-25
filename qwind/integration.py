@@ -213,7 +213,7 @@ def _integrate_dblquad_kernel_z_jitted_rel(phi_d, r_d, r, z):
     return ff
 
 
-def qwind_integration_dblquad(r, z, disk_r_min, disk_r_max):
+def qwind_integration_dblquad(r, z, disk_r_min, disk_r_max, epsabs=1e-11):
     """
     Double quad integration of the radiation force integral, using the Nquad
     algorithm. 
@@ -235,17 +235,17 @@ def qwind_integration_dblquad(r, z, disk_r_min, disk_r_max):
         _integrate_dblquad_kernel_r_jitted, ((
             0, np.pi), (disk_r_min, disk_r_max)),
         args=(r, z),
-        opts=[{'points': [0]}, {'points': [r]}])
+        opts=[{'points': [0], 'epsabs' : epsabs}, {'points': [r], 'epsabs' : epsabs}])
     z_int, z_error = scipy.integrate.nquad(
         _integrate_dblquad_kernel_z_jitted, ((
             0, np.pi), (disk_r_min, disk_r_max)),
         args=(r, z),
-        opts=[{'points': [0]}, {'points': [r]}])
+        opts=[{'points': [0], 'epsabs' : epsabs}, {'points': [r], 'epsabs' : epsabs}])
     r_int = 2. * z * r_int
     z_int = 2. * z**2 * z_int
     return (r_int, z_int, r_error, z_error)
 
-def qwind_integration_rel(r, z, disk_r_min, disk_r_max):
+def qwind_integration_rel(r, z, disk_r_min, disk_r_max, epsabs=1e-11):
     """
     Double quad integration of the radiation force integral, using the Nquad
     algorithm. 
@@ -267,12 +267,12 @@ def qwind_integration_rel(r, z, disk_r_min, disk_r_max):
         _integrate_dblquad_kernel_r_jitted_rel, ((
             0, np.pi), (disk_r_min, disk_r_max)),
         args=(r, z),
-        opts=[{'points': [0]}, {'points': [r]}])
+        opts=[{'points': [0], 'epsabs' : epsabs}, {'points': [r], 'epsabs' : epsabs}])
     z_int, z_error = scipy.integrate.nquad(
         _integrate_dblquad_kernel_z_jitted_rel, ((
             0, np.pi), (disk_r_min, disk_r_max)),
         args=(r, z),
-        opts=[{'points': [0]}, {'points': [r]}])
+        opts=[{'points': [0], 'epsabs' : epsabs}, {'points': [r], 'epsabs' : epsabs}])
     r_int = 2. * z * r_int
     z_int = 2. * z**2 * z_int
     return (r_int, z_int, r_error, z_error)

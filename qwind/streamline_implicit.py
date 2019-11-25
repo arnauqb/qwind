@@ -8,6 +8,8 @@ from qwind import utils
 from decimal import Decimal, DivisionByZero
 from qwind import constants as const
 import pickle
+from assimulo.problem import Implicit_Problem
+from assimulo.solvers import IDA
 
 # check backend to import appropiate progress bar #
 
@@ -238,12 +240,34 @@ class streamline():
                 a += fr * np.exp(-self.tau_uv) * (1 + self.fm)
         return [v_r, v_z, a[0], a[1]]
 
+    def residual(t, y, yd):
+
+        r, z, v_r, v_z = y
+        r_dot, z_dot, v_r_dot, v_z_dot = yd
+        a_T = np.sqrt(v_r_dot**2 + v_z_dot**2)
+        v_T = np.sqrt(v_r**2 + v_z**2)
+        fg = self.force_gravity(r,z)
+        self.update_radiation(r, z, v_T, a_T)
+        fr = self.radiation.force_radiation(r, z, self.fm, self.tau_uv, epsabs = self.epsabs)[[0,2]]
+        a_r = fg[0] + centrifugal_term + fr[0]
+        a_z = fg[-1] + fr[-1]
+        res_0 = r_dot - v_r
+        res_1 = z_dot - v_z
+        res_2 = v_r_dot - a_r
+        res_3 = v_z_dot - a_z
+        return np.array([res_0, res_1, res_2, res_3])
+
+
     def initialize_ode_solver(self):
         t_0 = 0
         y_0 = [self.r_0, self.z_0, self.v_r_0, self.v_z_0]
-        delta_t_0 = 0.1#0.4096 #* self.wind.RG/const.C
+        a_0 = self.radiation.force_radiation(self.r_0, self.z_0
+        yd_0 = [self.v_r_0, self.v_z_0, 0, 0]
+        #delta_t_0 = 0.1#0.4096 #* self.wind.RG/const.C
         delta_t_max = self.dt #np.inf#100#100 #10 * delta_t_0
-        solver = integrate.RK45(fun=self.rk4_ydot, t0=t_0, y0=y_0, t_bound=np.inf, first_step =delta_t_0, max_step=delta_t_max, rtol=self.rtol, atol=self.atol)#, atol=np.array([1e-12,1e-12,1e-15,1e-15]))
+        model = Implicit_Problem(self.residual, y_0, yd_0, t_0)
+        #solver = integrate.RK45(fun=self.rk4_ydot, t0=t_0, y0=y_0, t_bound=np.inf, first_step =delta_t_0, max_step=delta_t_max, rtol=self.rtol, atol=self.atol)#, atol=np.array([1e-12,1e-12,1e-15,1e-15]))
+        solver = IDA(model)
         return solver
 
     def save_hist(self, r, z, v_r, v_z):
@@ -295,54 +319,58 @@ class streamline():
         y_0 = [self.r_0, self.z_0, self.v_r_0, self.v_z_0]
         self.y_hist = [y_0]
         self.end_line = False
-        for it in tqdm(range(0, niter)):
-            self.solver.step()
-            if "debug_mode" in self.wind.modes:
-                r, z, v_r, v_z = self.streamline_pos[it]
-                self.solver.y = np.array([r,z,v_r,v_z])
-            r, z, v_r, v_z = self.solver.y
-            self.t_hist.append(self.solver.t)
-            self.a = self.rk4_ydot(self.solver.t, self.solver.y)[2:4]
-            fg = self.force_gravity(r,z)
-            fr = self.radiation.force_radiation(r,z,self.fm,self.tau_uv)
-            self.fg_hist.append(fg)
-            self.fr_hist.append(fr)
-            self.a_hist.append(self.a)
-            a_T = np.sqrt(self.a[0]**2 + self.a[1]**2)
-            self.a_T = a_T
-            self.v_T = np.sqrt(v_r**2 + v_z**2)
-            self.update_radiation(r, z, self.v_T, a_T)
-            self.save_hist(r, z, v_r, v_z)
-            # print(self.solver.step_size)
-            d = np.sqrt(r**2 + z**2)
-            v_esc = self.wind.v_esc(d)
-            self.v_esc_hist.append(v_esc)
-            # record number of iterations #
-            self.it = it
-            self.iter.append(it)
+        tfinal = 100000 * self.wind.RG / const.C
+        ncp = 1000
+        t, y, yd = self.solver.simulate(tfinal, ncp)
+        #for it in tqdm(range(0, niter)):
+            #self.solver.step()
 
-            #if ((it == 99) or (it == 9999) or (it == 99999)):
-            #    # update time step  at 100 iterations#
-            #    self.dt = self.dt * 10.
+            #if "debug_mode" in self.wind.modes:
+            #    r, z, v_r, v_z = self.streamline_pos[it]
+            #    self.solver.y = np.array([r,z,v_r,v_z])
+            #r, z, v_r, v_z = self.solver.y
+            #self.t_hist.append(self.solver.t)
+            #self.a = self.rk4_ydot(self.solver.t, self.solver.y)[2:4]
+            #fg = self.force_gravity(r,z)
+            #fr = self.radiation.force_radiation(r,z,self.fm,self.tau_uv)
+            #self.fg_hist.append(fg)
+            #self.fr_hist.append(fr)
+            #self.a_hist.append(self.a)
+            #a_T = np.sqrt(self.a[0]**2 + self.a[1]**2)
+            #self.a_T = a_T
+            #self.v_T = np.sqrt(v_r**2 + v_z**2)
+            #self.update_radiation(r, z, self.v_T, a_T)
+            #self.save_hist(r, z, v_r, v_z)
+            ## print(self.solver.step_size)
+            #d = np.sqrt(r**2 + z**2)
+            #v_esc = self.wind.v_esc(d)
+            #self.v_esc_hist.append(v_esc)
+            ## record number of iterations #
+            #self.it = it
+            #self.iter.append(it)
 
-            # termination condition for a failed wind #
-            # or ((z <  np.max(self.z_hist)) and (v_z < 0.0))):
-            failed_condition_1 = (z <= self.z_0) and (v_z < 0.)
-            failed_condition_2 = (z < np.max(self.z_hist) and (v_z < 0))
-            if failed_condition_1 or failed_condition_2:# or failed_condition_3:
-                print("Failed wind! \n")
-                break
+            ##if ((it == 99) or (it == 9999) or (it == 99999)):
+            ##    # update time step  at 100 iterations#
+            ##    self.dt = self.dt * 10.
 
-            # record when streamline escapes #
-            if((self.v_T > v_esc) and (not self.escaped)):
-                self.escaped = True
-                print("escape velocity reached.")
+            ## termination condition for a failed wind #
+            ## or ((z <  np.max(self.z_hist)) and (v_z < 0.0))):
+            #failed_condition_1 = (z <= self.z_0) and (v_z < 0.)
+            #failed_condition_2 = (z < np.max(self.z_hist) and (v_z < 0))
+            #if failed_condition_1 or failed_condition_2:# or failed_condition_3:
+            #    print("Failed wind! \n")
+            #    break
 
-            if(d > self.wind.d_max and self.escaped):
-                print("line escaped\n")
-                break
-        if self.escaped:
-            self.escaping_angle = np.arctan(self.z_hist[-1] / self.r_hist[-1])
-            self.terminal_velocity = self.v_T_hist[-1]
+            ## record when streamline escapes #
+            #if((self.v_T > v_esc) and (not self.escaped)):
+            #    self.escaped = True
+            #    print("escape velocity reached.")
 
-        self.solver_output = self.solver.dense_output()
+            #if(d > self.wind.d_max and self.escaped):
+            #    print("line escaped\n")
+            #    break
+        #if self.escaped:
+        #    self.escaping_angle = np.arctan(self.z_hist[-1] / self.r_hist[-1])
+        #    self.terminal_velocity = self.v_T_hist[-1]
+
+        #self.solver_output = self.solver.dense_output()

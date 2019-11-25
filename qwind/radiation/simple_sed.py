@@ -287,7 +287,7 @@ class SimpleSED:
         fm = max(0,fm)
         return fm
 
-    def force_radiation(self, r, z, fm, tau_uv, return_error=False):
+    def force_radiation(self, r, z, fm, tau_uv, return_error=False, **kwargs):
         """
         Computes the radiation force at the point (r,z)
 
@@ -304,10 +304,10 @@ class SimpleSED:
             i_aux = integration.qwind_old_integration(r, z)
         if('non_relativistic' in self.wind.modes):
             i_aux = integration.qwind_integration_dblquad(
-                r, z, self.wind.disk_r_min, self.wind.disk_r_max)
+                r, z, self.wind.disk_r_min, self.wind.disk_r_max, **kwargs)
         else:
             i_aux = integration.qwind_integration_rel(
-                r, z, self.wind.disk_r_min, self.wind.disk_r_max)
+                r, z, self.wind.disk_r_min, self.wind.disk_r_max, **kwargs)
             error = i_aux[2:4]
             self.int_error_hist.append(error)
 

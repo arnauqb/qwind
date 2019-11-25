@@ -24,7 +24,7 @@ class Qwind:
     """
 
     def __init__(self,
-                 M=2e8,
+                 M=1e8,
                  mdot=0.5,
                  spin=0.,
                  eta=0.057,
@@ -39,6 +39,7 @@ class Qwind:
                  rho_shielding=2e8,
                  intsteps=1,
                  nr=20,
+                 d_max=1e5,
                  save_dir=None,
                  n_cpus=1):
         """
@@ -91,6 +92,7 @@ class Qwind:
         self.disk_r_max = disk_r_max
         self.eta = eta
         self.nr = nr
+        self.d_max = d_max
         self.rho_shielding = rho_shielding
 
         self.RG = const.G * self.M / (const.C ** 2)  # gravitational radius
@@ -216,6 +218,8 @@ class Qwind:
             rho_0 = self.radiation.sed_class.disk_number_density(r_0)
         if "rk4" in self.modes:
             from qwind.streamline_rk4 import streamline
+        elif "implicit" in self.modes:
+            from qwind.streamline_implicit import streamline
         else:
             from qwind.streamline import streamline
         return streamline(
@@ -271,9 +275,7 @@ class Qwind:
                 #    self.tanthetamax = tantheta
                 #    print("hi")
                 #print(tantheta, self.tanthetamax)
-
-            self.mdot_w = self.compute_wind_mass_loss()
-            self.kinetic_luminosity = self.compute_wind_kinetic_luminosity()
+            self.mdot_w, self.kinetic_luminosity, self.angle, self.v_terminal = self.compute_wind_properties()
             return self.lines
         print("multiple cpus")
         niter_array = niter * np.ones(len(self.lines))
@@ -282,13 +284,37 @@ class Qwind:
         with Pool(self.n_cpus) as multiprocessing_pool:
             self.lines = multiprocessing_pool.starmap(
                 evolve, zip(self.lines, niter_array))
-        self.mdot_w = self.compute_wind_mass_loss()
-        self.kinetic_luminosity = self.compute_wind_kinetic_luminosity()
+        #self.mdot_w = self.compute_wind_mass_loss()
+        #self.kinetic_luminosity = self.compute_wind_kinetic_luminosity()
+        self.mdot_w, self.kinetic_luminosity, self.angle, self.v_terminal = self.compute_wind_properties()
         return self.lines
 
-    def compute_wind_mass_loss(self):
+    def compute_line_mass_loss(self, line):
         """
         Computes wind mass loss rate after evolving the streamlines.
+        """
+        dR = self.lines_r_range[1] - self.lines_r_range[0]
+        mdot_w_total = 0
+        area = 2 * np.pi * ((line.r_0 + dR/2.)**2. -
+                            (line.r_0 - dR/2.)**2) * self.RG**2.
+        mdot_w = line.rho_0 * const.M_P * line.v_T_0 * const.C * area
+        return mdot_w
+    
+    def compute_line_kinetic_luminosity(self, line):
+        """
+        Computes wind kinetic luminosity
+        """
+        dR = self.lines_r_range[1] - self.lines_r_range[0]
+        area = 2 * np.pi * ((line.r_0 + dR/2.)**2. -
+                            (line.r_0 - dR/2.)**2) * self.RG**2.
+        mdot_w = line.rho_0 * const.M_P * line.v_T_0 * const.C * area
+        kl = 0.5 * mdot_w * (const.C * line.v_T_hist[-1])**2
+        return kl 
+
+
+    def compute_wind_properties(self):
+        """
+        Computes wind mass loss rate, kinetic luminosity, and the terminal velocity and angle of the fastest streamline.
         """
         escaped_mask = []
         for line in self.lines:
@@ -299,42 +325,24 @@ class Qwind:
 
         if(len(lines_escaped) == 0):
             print("No wind escapes")
-            return 0
+            return [0,0,0,0]
 
-        dR = self.lines_r_range[1] - self.lines_r_range[0]
         mdot_w_total = 0
-
+        kinetic_energy_total = 0
+        angles = []
+        terminal_vs = []
         for line in lines_escaped:
-            area = 2 * np.pi * ((line.r_0 + dR/2.)**2. -
-                                (line.r_0 - dR/2.)**2) * self.RG**2.
-            mdot_w = line.rho_0 * const.M_P * line.v_T_0 * const.C * area
-            mdot_w_total += mdot_w
+            mdot_w_total += self.compute_line_mass_loss(line)
+            kinetic_energy_total += self.compute_line_kinetic_luminosity(line)
+            angles.append(line.escaping_angle)
+            terminal_vs.append(line.terminal_velocity)
 
-        return mdot_w_total
-    
-    def compute_wind_kinetic_luminosity(self):
-        """
-        Computes wind kinetic luminosity
-        """
-        escaped_mask = []
-        for line in self.lines:
-            escaped_mask.append(line.escaped)
-        escaped_mask = np.array(escaped_mask, dtype=int)
-        wind_exists = False
-        lines_escaped = np.array(self.lines)[escaped_mask == True]
-        if(len(lines_escaped) == 0):
-            return 0
+        fastest_line_idx = np.argmax(terminal_vs)
+        v_fastest = terminal_vs[fastest_line_idx]
+        angle_fastest = angles[fastest_line_idx] * 180 / np.pi 
 
-        dR = self.lines_r_range[1] - self.lines_r_range[0]
-        kinetic_total = 0
-        for line in lines_escaped:
-            area = 2 * np.pi * ((line.r_0 + dR/2.)**2. -
-                                (line.r_0 - dR/2.)**2) * self.RG**2.
-            mdot_w = line.rho_0 * const.M_P * line.v_T_0 * const.C * area
-            kl = 0.5 * mdot_w * (const.C * line.v_T_hist[-1])**2
-            kinetic_total += kl
+        return [mdot_w_total, kinetic_energy_total, angle_fastest, v_fastest]
 
-        return kinetic_total 
 
 
 if __name__ == '__main__':

@@ -4,6 +4,7 @@ import os
 import pandas as pd
 import pickle
 import numpy as np
+import json
 
 
 def type_of_script():
@@ -63,20 +64,15 @@ def save_results(wind, folder_name="Results"):
             'escaped': line.escaped * np.ones(len(line.rho_hist)),
             'V_esc': line.v_esc_hist,
         }
-        for key in data.keys():
-            print(key, len(data[key]))
         df = pd.DataFrame.from_dict(data)
         df.to_csv(lines_file, index=False)
-
-        mdot_w = wind.mdot_w
-        mdot_w_msun = mdot_w / constants.M_SUN * 3.154e7  # yr to s
-        kin_lumin = wind.kinetic_luminosity
-        with open(os.path.join(folder_name, "mass_loss.csv"), 'w') as f:
-            f.write("Wind mass loss: %e [g/s]\n" % mdot_w)
-            f.write("Wind mass loss: %e [Msun/yr]" % mdot_w_msun)
-            f.write("Wind kinetic luminosity: %e [erg/s]\n" % kin_lumin)
-
-#        with open(os.path.join(folder_name, "lines.pkl"), "wb") as f:
-#            pickle.dump(wind, f)
-
+    properties = {
+        "mdot_w_gs" : wind.mdot_w,
+        "mdot_w_msunyr" : wind.mdot_w / constants.M_SUN * constants.YEAR_TO_SEC,
+        "kin_lumin" : wind.kinetic_luminosity,
+        "angle" : wind.angle,
+        "terminal_velocity" : wind.v_terminal,
+    }
+    with open(os.path.join(folder_name, "wind_properties.csv"), "w") as f:
+        f.write(json.dumps(properties))
     return 1
