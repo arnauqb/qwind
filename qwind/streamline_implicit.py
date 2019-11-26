@@ -9,7 +9,9 @@ from decimal import Decimal, DivisionByZero
 from qwind import constants as const
 import pickle
 from assimulo.problem import Implicit_Problem
-from assimulo.solvers import IDA
+from assimulo.solvers import IDA, Radau5DAE
+from assimulo.exception import TerminateSimulation
+
 
 # check backend to import appropiate progress bar #
 
@@ -25,6 +27,13 @@ else:
     tqdm = tqdm_dump
 
 tqdm = tqdm_dump
+
+class BackToDisk(Exception):
+    pass
+
+class Escape(Exception):
+    pass
+
 
 class streamline():
     """
@@ -42,9 +51,9 @@ class streamline():
             v_z_0=1e7,
             v_r_0=0.,
             dt=np.inf,#4.096 / 10.
-            rtol=1e-7,
-            atol=[1e-6,1e-6,1e-6,1e-6],
-            epsabs=1e-11,
+            solver_rtol=1e-7,
+            solver_atol=[1e-6,1e-6,1e-6,1e-6],
+            integral_epsabs=1e-11,
             no_vertical_tau_uv=False,
     ):
         """
@@ -63,14 +72,12 @@ class streamline():
         self.radiation = radiation_class
         if "debug_mode" in self.wind.modes:
             self.streamline_pos = np.loadtxt("streamline.txt")
-            print(self.streamline_pos)
 
-        self.rtol = rtol
-        self.atol = atol
-        self.epsabs = epsabs
+        self.solver_rtol = solver_rtol
+        self.solver_atol = solver_atol
+        self.integral_epsabs = integral_epsabs
         self.no_vertical_tau_uv = no_vertical_tau_uv
         # black hole and disc variables #
-        self.a = np.array([0, 0])  # / u.s**2
         self.T = T  # * u.K
         self.v_th = self.wind.thermal_velocity(self.T)
         self.rho_0 = rho_0
@@ -87,6 +94,8 @@ class streamline():
         self.t = 0  # in seconds
         self.r_0 = r_0
         self.z_0 = z_0
+        global Z_0
+        Z_0 = z_0
         self.v_r = v_r_0 / const.C
         self.v_r_0 = v_r_0 / const.C
         self.v_r_hist = [self.v_r]
@@ -121,6 +130,13 @@ class streamline():
         self.xi = self.radiation.ionization_parameter(
             self.r, self.z, self.tau_x, self.wind.rho_shielding)  # self.wind.Xi(self.d, self.z / self.r)
         
+        fgrav = self.force_gravity(self.r_0, self.z_0)
+        frad = self.radiation.force_radiation(self.r_0, self.z_0, self.fm, self.tau_uv)
+        centrifugal_term = self.l**2 / self.r_0**3
+        a_r = fgrav[0] + frad[0] + centrifugal_term
+        a_z = fgrav[-1] + frad[-1]
+        self.a_0 = np.array([a_r, a_z])  # / u.s**2
+        self.a = self.a_0
         # force related variables #
         self.Fgrav = []
         self.Frad = []
@@ -204,70 +220,66 @@ class streamline():
         return grav
 
    ## kinematics ##
+    #def state_events(self, t, y, ydot, sw):
+    #    """
+    #    When sign changes stops iteration.
+    #    """
+    #    d = np.sqrt(y[0]**2 + y[1]**2)
+    #    z = y[1]
+    #    state = np.array([z + 0.1 - self.z_0, d - 1e5])
+    #    return state
 
-    def rk4_ydot(self, t, y): # y is (r,z, v_r, v_z)
+
+    def handle_result(self, solver, t, y, yd):
+        """
+        Event handling. This functions is called when Assimulo finds an event as
+        specified by the event functions.
+        """
+        r, z, v_r, v_z = y
+        self.t_hist.append(t)
+        self.r_hist.append(r)
+        self.z_hist.append(z)
+        self.v_r_hist.append(v_r)
+        self.v_z_hist.append(v_z)
+        d = np.sqrt(r**2 + z**2)
+        if d > 1e5:
+            self.escaped = True
+            raise Escape 
+        if z < (self.z_0 - 0.01):
+            raise BackToDisk 
+
+    
+    def residual(self, t, y, ydot, sw):
 
         r, z, v_r, v_z = y
-        v_T = np.sqrt(v_r**2 + v_z**2)
-        #self.update_radiation(r, z, self.v_T)
-        #print(f"a : {self.a} \n v_T: {self.v_T} \n dv_dr: {self.dv_dr} \n \n")
-        fg = self.force_gravity(r, z)
-        fr = self.radiation.force_radiation(r, z, 0, 0, epsabs = self.epsabs)[[0,2]]
-        fr_approx = fr * (1 + self.fm_hist[-1])# * np.exp(-self.tau_uv_hist[-1])
-        tau_uv = np.exp(-self.tau_uv_hist[-1])
-        if self.no_vertical_tau_uv:
-            d = np.sqrt(r**2 + z**2)
-            sin_theta = z / d
-            cos_theta = r / d
-            fr_approx * np.exp(-np.array([tau_uv * cos_theta, tau_uv * sin_theta]))
-        else:
-            fr_approx * np.exp(-tau_uv)
-        centrifugal_term = self.l**2 / r**3
-        a = fg
-        a[0] +=  centrifugal_term
-        if "gravityonly" not in self.wind.modes:
-            a += fr_approx
-        #if "debug_mode" in self.wind.modes:
-        #    a[0] = 1e-8 + 1e-5 * (t/25000) + (t**2 / np.sqrt(25000))
-        #    a[1] = 1e-8 + 1e-5 * (t/25000) + (t**2 / np.sqrt(25000))
-        a_T = np.sqrt(a[0]**2 + a[1]**2)
-        self.update_radiation(r, z, v_T, a_T)
-        if "gravityonly" not in self.wind.modes:
-            a = a - fr_approx #+ 
-            if self.no_vertical_tau_uv:
-                a += fr * np.exp(-np.array([tau_uv * cos_theta, tau_uv * sin_theta])) * (1 + self.fm)
-            else:
-                a += fr * np.exp(-self.tau_uv) * (1 + self.fm)
-        return [v_r, v_z, a[0], a[1]]
-
-    def residual(t, y, yd):
-
-        r, z, v_r, v_z = y
-        r_dot, z_dot, v_r_dot, v_z_dot = yd
+        r_dot, z_dot, v_r_dot, v_z_dot = ydot
         a_T = np.sqrt(v_r_dot**2 + v_z_dot**2)
         v_T = np.sqrt(v_r**2 + v_z**2)
         fg = self.force_gravity(r,z)
         self.update_radiation(r, z, v_T, a_T)
-        fr = self.radiation.force_radiation(r, z, self.fm, self.tau_uv, epsabs = self.epsabs)[[0,2]]
+        fr = self.radiation.force_radiation(r, z, self.fm, self.tau_uv, epsabs = self.integral_epsabs)[[0,2]]
+        centrifugal_term = self.l**2 / r**3
         a_r = fg[0] + centrifugal_term + fr[0]
         a_z = fg[-1] + fr[-1]
-        res_0 = r_dot - v_r
-        res_1 = z_dot - v_z
-        res_2 = v_r_dot - a_r
-        res_3 = v_z_dot - a_z
-        return np.array([res_0, res_1, res_2, res_3])
-
+        residue = np.zeros(4)
+        residue[0] = r_dot - v_r
+        residue[1] = z_dot - v_z
+        residue[2] = v_r_dot - a_r
+        residue[3] = v_z_dot - a_z
+        return residue
 
     def initialize_ode_solver(self):
         t_0 = 0
-        y_0 = [self.r_0, self.z_0, self.v_r_0, self.v_z_0]
-        a_0 = self.radiation.force_radiation(self.r_0, self.z_0
-        yd_0 = [self.v_r_0, self.v_z_0, 0, 0]
-        #delta_t_0 = 0.1#0.4096 #* self.wind.RG/const.C
+        self.y_0 = [self.r_0, self.z_0, self.v_r_0, self.v_z_0]
+        self.yd_0 = [self.v_r_0, self.v_z_0, self.a_0[0], self.a_0[1]]
         delta_t_max = self.dt #np.inf#100#100 #10 * delta_t_0
-        model = Implicit_Problem(self.residual, y_0, yd_0, t_0)
-        #solver = integrate.RK45(fun=self.rk4_ydot, t0=t_0, y0=y_0, t_bound=np.inf, first_step =delta_t_0, max_step=delta_t_max, rtol=self.rtol, atol=self.atol)#, atol=np.array([1e-12,1e-12,1e-15,1e-15]))
+        model = Implicit_Problem(self.residual, self.y_0, self.yd_0, t_0, sw0=[False, False])
+        #model.state_events = self.state_events
+        #model.handle_events = self.handle_event
+        model.handle_result = self.handle_result
         solver = IDA(model)
+        solver.report_continuously = True
+        #solver.display_progress = True
         return solver
 
     def save_hist(self, r, z, v_r, v_z):
@@ -316,12 +328,20 @@ class streamline():
         """
         print(' ', end='', flush=True)
         self.solver = self.initialize_ode_solver()
-        y_0 = [self.r_0, self.z_0, self.v_r_0, self.v_z_0]
-        self.y_hist = [y_0]
-        self.end_line = False
-        tfinal = 100000 * self.wind.RG / const.C
-        ncp = 1000
-        t, y, yd = self.solver.simulate(tfinal, ncp)
+        #y_0 = [self.r_0, self.z_0, self.v_r_0, self.v_z_0]
+        #self.y_hist = [y_0]
+        #self.end_line = False
+        tfinal = 1000 * self.wind.RG / const.C
+        #ncp = 1000
+        try:
+            self.solver.simulate(tfinal)
+        except Escape:
+            print("Line escaped!")
+            pass
+        except BackToDisk:
+            print("Line failed!")
+            pass
+
         #for it in tqdm(range(0, niter)):
             #self.solver.step()
 
