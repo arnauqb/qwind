@@ -9,7 +9,7 @@ from decimal import Decimal, DivisionByZero
 from qwind import constants as const
 import pickle
 from assimulo.problem import Implicit_Problem
-from assimulo.solvers import IDA, Radau5DAE
+from assimulo.solvers import IDA, Radau5DAE, ODASSL
 from assimulo.exception import TerminateSimulation
 
 
@@ -34,6 +34,8 @@ class BackToDisk(Exception):
 class Escape(Exception):
     pass
 
+class Stalling(Exception):
+    pass
 
 class streamline():
     """
@@ -51,10 +53,14 @@ class streamline():
             v_z_0=1e7,
             v_r_0=0.,
             dt=np.inf,#4.096 / 10.
-            solver_rtol=1e-7,
-            solver_atol=[1e-6,1e-6,1e-6,1e-6],
-            integral_epsabs=1e-11,
-            no_vertical_tau_uv=False,
+            solver_rtol=1e-6,
+            solver_atol=1e-3,
+            integral_atol=0,
+            integral_rtol=1e-4,
+            t_max = 10000,
+            terminate_stalling=True,
+            max_steps=10000,
+            no_tau_z=False,
     ):
         """
         Args:
@@ -75,8 +81,12 @@ class streamline():
 
         self.solver_rtol = solver_rtol
         self.solver_atol = solver_atol
-        self.integral_epsabs = integral_epsabs
-        self.no_vertical_tau_uv = no_vertical_tau_uv
+        self.integral_atol = integral_atol
+        self.integral_rtol = integral_rtol
+        self.max_steps = max_steps
+        self.terminate_stalling = terminate_stalling
+        self.t_max = t_max * self.wind.RG / const.C
+        self.no_tau_z = no_tau_z 
         # black hole and disc variables #
         self.T = T  # * u.K
         self.v_th = self.wind.thermal_velocity(self.T)
@@ -131,7 +141,7 @@ class streamline():
             self.r, self.z, self.tau_x, self.wind.rho_shielding)  # self.wind.Xi(self.d, self.z / self.r)
         
         fgrav = self.force_gravity(self.r_0, self.z_0)
-        frad = self.radiation.force_radiation(self.r_0, self.z_0, self.fm, self.tau_uv)
+        frad = self.radiation.force_radiation(self.r_0, self.z_0, self.fm, self.tau_uv, epsabs = self.integral_atol, epsrel = self.integral_rtol)[[0,-1]]
         centrifugal_term = self.l**2 / self.r_0**3
         a_r = fgrav[0] + frad[0] + centrifugal_term
         a_z = fgrav[-1] + frad[-1]
@@ -142,7 +152,7 @@ class streamline():
         self.Frad = []
         self.iter = []
         self.fg_hist=[self.force_gravity(self.r_0,self.z_0)]
-        self.fr_hist=[self.radiation.force_radiation(self.r_0,self.z_0,self.fm,self.tau_uv)]
+        self.fr_hist=[frad]#self.radiation.force_radiation(self.r_0,self.z_0,self.fm,self.tau_uv)]
 
         #### history variables ####
 
@@ -176,6 +186,12 @@ class streamline():
 
         #force histories #
         self.a_hist = [self.a]
+        self.a_T_hist = [0]
+
+        y_0 = [self.r_0, self.z_0, self.v_r_0, self.v_z_0]
+        yd_0 = [self.v_r_0, self.v_z_0, self.a_0[0], self.a_0[1]]
+        self.solver = self.initialize_ode_solver(y_0, yd_0, 0)
+        self.stalling_exception_counter = 0
 
     ###############
     ## streaming ##
@@ -195,18 +211,6 @@ class streamline():
         rho = self.rho_0 * radial * v_ratio
         return rho
 
-    #def compute_velocity_gradient(self, x_0, x_1, v_T_0, v_T_1):
-    #    """
-    #    Computes dv/dl
-    #    """
-    #    delta_l = Decimal(np.linalg.norm(x_1 - x_0))
-    #    dv = Decimal(v_T_1) - Decimal(v_T_0)
-    #    try:
-    #        dv_dr = abs(float(dv / delta_l))
-    #    except DivisionByZero:
-    #        return 0
-    #    return dv_dr
-
     def force_gravity(self, r, z):
         """
         Computes gravitational force at the current position. 
@@ -220,47 +224,73 @@ class streamline():
         return grav
 
    ## kinematics ##
-    #def state_events(self, t, y, ydot, sw):
-    #    """
-    #    When sign changes stops iteration.
-    #    """
-    #    d = np.sqrt(y[0]**2 + y[1]**2)
-    #    z = y[1]
-    #    state = np.array([z + 0.1 - self.z_0, d - 1e5])
-    #    return state
-
-
+    
     def handle_result(self, solver, t, y, yd):
         """
         Event handling. This functions is called when Assimulo finds an event as
         specified by the event functions.
         """
         r, z, v_r, v_z = y
-        self.t_hist.append(t)
-        self.r_hist.append(r)
-        self.z_hist.append(z)
-        self.v_r_hist.append(v_r)
-        self.v_z_hist.append(v_z)
+        solver.t_sol.extend([t])
+        solver.y_sol.extend([y])
+        solver.yd_sol.extend([yd])
         d = np.sqrt(r**2 + z**2)
+        v_T = np.sqrt(v_r**2 + v_z**2)
+        a_T = np.sqrt(solver.yd[2]**2 + solver.yd[3]**2)
+        self.update_radiation(r, z, v_T, a_T, save_hist=True)
         if d > 1e5:
             self.escaped = True
             raise Escape 
         if z < (self.z_0 - 0.01):
             raise BackToDisk 
 
+        if self.terminate_stalling:
+            if (z < np.max(self.z_hist)) and (v_z < 0):
+                raise BackToDisk
+        #print(self.solver.y)
+        # stalling
+        if abs(v_T - self.v_th) < 1e-5:
+        ##    #y = self.solver.y
+        ##    ##ydot = self.solver.yd
+        ##    #y2 = y.copy()
+             print("stalling...")
+             self.stalling_timer += 1
+             if self.stalling_timer >= 3:
+                 raise Stalling
+        #    #self.first_iter = True
+        #    #if self.stalling_timer == 1:
+        #    #    #y2[2] += 1e-5 * y2[2]
+        #    #    #y2[3] += 1e-5 * y2[3]
+        #    #    #self.solver.y = y2
+        #    #    #self.stalling_timer = 0
+        #    #    #self.solver.simulate(self.tfinal)
+
+        #    #elif self.stalling_timer == 2:
+        #    #    y2[0] += 1e-5 * y2[0] 
+        #    #    y2[1] += 1e-5 * y2[1]
+        #    #    self.solver.y = y2
+        #    #    #self.solver.simulate(self.tfinal)
+        #    if self.stalling_timer == 2:
+        #        raise Stalling
+        #self.first_iter=False
+        #return [t, y, yd]
+
     
-    def residual(self, t, y, ydot, sw):
+    def residual(self, t, y, ydot):
 
         r, z, v_r, v_z = y
         r_dot, z_dot, v_r_dot, v_z_dot = ydot
         a_T = np.sqrt(v_r_dot**2 + v_z_dot**2)
-        v_T = np.sqrt(v_r**2 + v_z**2)
+        v_T = np.sqrt(r_dot**2 + z_dot**2)
         fg = self.force_gravity(r,z)
-        self.update_radiation(r, z, v_T, a_T)
-        fr = self.radiation.force_radiation(r, z, self.fm, self.tau_uv, epsabs = self.integral_epsabs)[[0,2]]
+        self.update_radiation(r, z, v_T, a_T, save_hist=False)
+        fr = self.radiation.force_radiation(r, z, self.fm, self.tau_uv, no_tau_z=self.no_tau_z, epsabs = self.integral_atol, epsrel=self.integral_rtol)[[0,2]]
         centrifugal_term = self.l**2 / r**3
-        a_r = fg[0] + centrifugal_term + fr[0]
-        a_z = fg[-1] + fr[-1]
+        a_r = fg[0] + centrifugal_term# + fr[0]
+        a_z = fg[-1]# + fr[-1]
+        if "gravityonly" not in self.wind.modes:
+            a_r += fr[0]
+            a_z += fr[-1]
         residue = np.zeros(4)
         residue[0] = r_dot - v_r
         residue[1] = z_dot - v_z
@@ -268,27 +298,38 @@ class streamline():
         residue[3] = v_z_dot - a_z
         return residue
 
-    def initialize_ode_solver(self):
-        t_0 = 0
-        self.y_0 = [self.r_0, self.z_0, self.v_r_0, self.v_z_0]
-        self.yd_0 = [self.v_r_0, self.v_z_0, self.a_0[0], self.a_0[1]]
-        delta_t_max = self.dt #np.inf#100#100 #10 * delta_t_0
-        model = Implicit_Problem(self.residual, self.y_0, self.yd_0, t_0, sw0=[False, False])
+    def initialize_ode_solver(self, y_0, yd_0, t_0):
+        model = Implicit_Problem(self.residual, y_0, yd_0, t_0)
         #model.state_events = self.state_events
         #model.handle_events = self.handle_event
         model.handle_result = self.handle_result
         solver = IDA(model)
+        solver.rtol = self.solver_rtol
+        solver.atol = self.solver_atol #* np.array([100, 10, 1e-4, 1e-4])
+        solver.inith = 0.1 #self.wind.RG / const.C
+        solver.maxh = self.dt * self.wind.RG / const.C
         solver.report_continuously = True
+        solver.verbosity = 50 # 50 = quiet
+        solver.maxsteps = self.max_steps
+        solver.num_threads = 3
         #solver.display_progress = True
         return solver
 
-    def save_hist(self, r, z, v_r, v_z):
+    def save_hist(self):
+        r, z, v_r, v_z = self.solver.y
+        a_T = np.sqrt(self.solver.yd[2]**2 + self.solver.yd[3]**2)
+        self.a_T_hist.append(a_T)
+        self.t_hist.append(self.solver.t)
         self.r_hist.append(r)
         self.z_hist.append(z)
         self.v_r_hist.append(v_r)
         self.v_z_hist.append(v_z)
         v_T = np.sqrt(v_r**2 + v_z**2)
         self.v_T_hist.append(v_T)
+        frad = self.radiation.force_radiation(r,z,self.fm, self.tau_uv, epsabs=self.integral_atol, epsrel=self.integral_rtol)[[0,-1]]
+        self.fr_hist.append(frad)
+        fgrav = self.force_gravity(r,z)
+        self.fg_hist.append(fgrav)
         self.rho_hist.append(self.rho)
         self.tau_dr_hist.append(self.tau_dr)
         self.tau_eff_hist.append(self.tau_eff)
@@ -298,14 +339,12 @@ class streamline():
         self.fm_hist.append(self.fm)
         self.dv_dr_hist.append(self.dv_dr)
 
-    def update_radiation(self, r, z, v_T, a_T):
+    def update_radiation(self, r, z, v_T, a_T, save_hist=False):
         """
         Updates all parameters related to the radiation field, given the new streamline position.
         """
         self.rho = self.update_density(r, z, v_T)
         self.tau_dr = self.wind.tau_dr(self.rho)
-        #self.dv_dr = self.compute_velocity_gradient(
-        #    x_0, x_1, v_T)
         self.dv_dr = a_T / v_T
         self.tau_eff = self.radiation.sobolev_optical_depth(
             self.tau_dr, self.dv_dr)
@@ -318,6 +357,8 @@ class streamline():
         self.xi = self.radiation.ionization_parameter(
             r, z, self.tau_x, self.rho)
         self.fm = self.radiation.force_multiplier(self.tau_eff, self.xi)
+        if save_hist:
+            self.save_hist()
 
     def iterate(self, niter=5000):
         """
@@ -327,70 +368,43 @@ class streamline():
             niter : Number of iterations
         """
         print(' ', end='', flush=True)
-        self.solver = self.initialize_ode_solver()
         #y_0 = [self.r_0, self.z_0, self.v_r_0, self.v_z_0]
         #self.y_hist = [y_0]
         #self.end_line = False
-        tfinal = 1000 * self.wind.RG / const.C
+        self.first_iter = False
+        #self.tfinal = 10000 * self.wind.RG / const.C
+        self.stalling_timer = 0
+        self.stalling = False
         #ncp = 1000
+        self.solver.initialize()
         try:
-            self.solver.simulate(tfinal)
+            self.solver.simulate(self.t_max)
         except Escape:
+            self.solver.finalize()
+            self.escaped = True
+            self.escaping_angle = np.arctan(self.z_hist[-1] / self.r_hist[-1])
+            self.terminal_velocity = np.sqrt(self.v_r_hist[-1]**2 + self.v_z_hist[-1]**2)
             print("Line escaped!")
             pass
         except BackToDisk:
+            self.solver.finalize()
             print("Line failed!")
             pass
+        except Stalling:
+            print("Line stalled!")
+            pass
 
-        #for it in tqdm(range(0, niter)):
-            #self.solver.step()
-
-            #if "debug_mode" in self.wind.modes:
-            #    r, z, v_r, v_z = self.streamline_pos[it]
-            #    self.solver.y = np.array([r,z,v_r,v_z])
-            #r, z, v_r, v_z = self.solver.y
-            #self.t_hist.append(self.solver.t)
-            #self.a = self.rk4_ydot(self.solver.t, self.solver.y)[2:4]
-            #fg = self.force_gravity(r,z)
-            #fr = self.radiation.force_radiation(r,z,self.fm,self.tau_uv)
-            #self.fg_hist.append(fg)
-            #self.fr_hist.append(fr)
-            #self.a_hist.append(self.a)
-            #a_T = np.sqrt(self.a[0]**2 + self.a[1]**2)
-            #self.a_T = a_T
-            #self.v_T = np.sqrt(v_r**2 + v_z**2)
-            #self.update_radiation(r, z, self.v_T, a_T)
-            #self.save_hist(r, z, v_r, v_z)
-            ## print(self.solver.step_size)
-            #d = np.sqrt(r**2 + z**2)
-            #v_esc = self.wind.v_esc(d)
-            #self.v_esc_hist.append(v_esc)
-            ## record number of iterations #
-            #self.it = it
-            #self.iter.append(it)
-
-            ##if ((it == 99) or (it == 9999) or (it == 99999)):
-            ##    # update time step  at 100 iterations#
-            ##    self.dt = self.dt * 10.
-
-            ## termination condition for a failed wind #
-            ## or ((z <  np.max(self.z_hist)) and (v_z < 0.0))):
-            #failed_condition_1 = (z <= self.z_0) and (v_z < 0.)
-            #failed_condition_2 = (z < np.max(self.z_hist) and (v_z < 0))
-            #if failed_condition_1 or failed_condition_2:# or failed_condition_3:
-            #    print("Failed wind! \n")
-            #    break
-
-            ## record when streamline escapes #
-            #if((self.v_T > v_esc) and (not self.escaped)):
-            #    self.escaped = True
-            #    print("escape velocity reached.")
-
-            #if(d > self.wind.d_max and self.escaped):
-            #    print("line escaped\n")
-            #    break
-        #if self.escaped:
-        #    self.escaping_angle = np.arctan(self.z_hist[-1] / self.r_hist[-1])
-        #    self.terminal_velocity = self.v_T_hist[-1]
-
-        #self.solver_output = self.solver.dense_output()
+            #print("Stalled! resetting...")
+            #self.solver.finalize()
+            #self.stalling_exception_counter += 1
+            #if self.stalling_exception_counter != 3:
+            #    y = self.solver.y
+            #    yd = self.solver.yd
+            #    #y[0] += y[0] * 1e-2
+            #    #y[1] += y[1] * 1e-2
+            #    y[0] += y[0] * 1e-1
+            #    self.solver = self.initialize_ode_solver(y, yd, self.solver.t)
+            #    self.iterate()
+            #else:
+            #    print("Line stalled!")
+            #    pass

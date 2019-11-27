@@ -42,7 +42,9 @@ class streamline():
             dt=np.inf,#4.096 / 10.
             rtol=1e-7,
             atol=[1e-6,1e-6,1e-6,1e-6],
-            epsabs=1e-11,
+            integral_epsabs=0,
+            integral_epsrel=1e-4,
+            terminate_stalling=True,
             no_vertical_tau_uv=False,
     ):
         """
@@ -65,7 +67,9 @@ class streamline():
 
         self.rtol = rtol
         self.atol = atol
-        self.epsabs = epsabs
+        self.integral_epsabs = integral_epsabs
+        self.integral_epsrel = integral_epsrel
+        self.terminate_stalling = terminate_stalling
         self.no_vertical_tau_uv = no_vertical_tau_uv
         # black hole and disc variables #
         self.a = np.array([0, 0])  # / u.s**2
@@ -124,7 +128,7 @@ class streamline():
         self.Frad = []
         self.iter = []
         self.fg_hist=[self.force_gravity(self.r_0,self.z_0)]
-        self.fr_hist=[self.radiation.force_radiation(self.r_0,self.z_0,self.fm,self.tau_uv)]
+        self.fr_hist=[self.radiation.force_radiation(self.r_0,self.z_0,self.fm,self.tau_uv, epsrel=self.integral_epsrel, epsabs=self.integral_epsabs)]
 
         #### history variables ####
 
@@ -158,6 +162,7 @@ class streamline():
 
         #force histories #
         self.a_hist = [self.a]
+        self.a_T_hist = [0]
 
     ###############
     ## streaming ##
@@ -210,16 +215,16 @@ class streamline():
         #self.update_radiation(r, z, self.v_T)
         #print(f"a : {self.a} \n v_T: {self.v_T} \n dv_dr: {self.dv_dr} \n \n")
         fg = self.force_gravity(r, z)
-        fr = self.radiation.force_radiation(r, z, 0, 0, epsabs = self.epsabs)[[0,2]]
+        fr = self.radiation.force_radiation(r, z, 0, 0, epsabs = self.integral_epsabs, epsrel = self.integral_epsrel)[[0,2]]
         fr_approx = fr * (1 + self.fm_hist[-1])# * np.exp(-self.tau_uv_hist[-1])
         tau_uv = np.exp(-self.tau_uv_hist[-1])
         if self.no_vertical_tau_uv:
             d = np.sqrt(r**2 + z**2)
             sin_theta = z / d
             cos_theta = r / d
-            fr_approx * np.exp(-np.array([tau_uv * cos_theta, tau_uv * sin_theta]))
+            fr_approx = fr_approx * np.exp(-np.array([tau_uv * cos_theta, tau_uv * sin_theta]))
         else:
-            fr_approx * np.exp(-tau_uv)
+            fr_approx = fr_approx * np.exp(-tau_uv)
         centrifugal_term = self.l**2 / r**3
         a = fg
         a[0] +=  centrifugal_term
@@ -235,14 +240,14 @@ class streamline():
             if self.no_vertical_tau_uv:
                 a += fr * np.exp(-np.array([tau_uv * cos_theta, tau_uv * sin_theta])) * (1 + self.fm)
             else:
-                a += fr * np.exp(-self.tau_uv) * (1 + self.fm)
+                a += fr * np.exp(-self.tau_uv_hist[-1]) * (1 + self.fm_hist[-1])
         return [v_r, v_z, a[0], a[1]]
 
     def initialize_ode_solver(self):
         t_0 = 0
         y_0 = [self.r_0, self.z_0, self.v_r_0, self.v_z_0]
         delta_t_0 = 0.1#0.4096 #* self.wind.RG/const.C
-        delta_t_max = self.dt #np.inf#100#100 #10 * delta_t_0
+        delta_t_max = self.dt * self.wind.RG / const.C  #np.inf#100#100 #10 * delta_t_0
         solver = integrate.RK45(fun=self.rk4_ydot, t0=t_0, y0=y_0, t_bound=np.inf, first_step =delta_t_0, max_step=delta_t_max, rtol=self.rtol, atol=self.atol)#, atol=np.array([1e-12,1e-12,1e-15,1e-15]))
         return solver
 
@@ -304,11 +309,12 @@ class streamline():
             self.t_hist.append(self.solver.t)
             self.a = self.rk4_ydot(self.solver.t, self.solver.y)[2:4]
             fg = self.force_gravity(r,z)
-            fr = self.radiation.force_radiation(r,z,self.fm,self.tau_uv)
+            fr = self.radiation.force_radiation(r,z,self.fm,self.tau_uv, epsrel=self.integral_epsrel, epsabs=self.integral_epsabs)
             self.fg_hist.append(fg)
             self.fr_hist.append(fr)
             self.a_hist.append(self.a)
             a_T = np.sqrt(self.a[0]**2 + self.a[1]**2)
+            self.a_T_hist.append(a_T)
             self.a_T = a_T
             self.v_T = np.sqrt(v_r**2 + v_z**2)
             self.update_radiation(r, z, self.v_T, a_T)
@@ -328,8 +334,8 @@ class streamline():
             # termination condition for a failed wind #
             # or ((z <  np.max(self.z_hist)) and (v_z < 0.0))):
             failed_condition_1 = (z <= self.z_0) and (v_z < 0.)
-            #failed_condition_2 = (z < np.max(self.z_hist) and (v_z < 0))
-            if failed_condition_1:# or failed_condition_2:# or failed_condition_3:
+            failed_condition_2 = (z < np.max(self.z_hist) and (v_z < 0)) and self.terminate_stalling
+            if failed_condition_1 or failed_condition_2:# or failed_condition_3:
                 print("Failed wind! \n")
                 break
 

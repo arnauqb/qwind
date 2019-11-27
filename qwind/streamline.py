@@ -38,7 +38,10 @@ class streamline():
             T=2e6,
             v_z_0=1e7,
             v_r_0=0.,
-            dt=4.096 / 10.
+            dt=4.096 / 10.,
+            integral_epsabs=0,
+            integral_epsrel=1e-4,
+            terminate_stalling=True,
     ):
         """
         Args:
@@ -55,6 +58,7 @@ class streamline():
         self.wind = wind
         self.radiation = radiation_class
 
+        self.terminate_stalling = terminate_stalling
         # black hole and disc variables #
         self.a = np.array([0, 0, 0])  # / u.s**2
         self.T = T  # * u.K
@@ -88,6 +92,8 @@ class streamline():
         self.v_esc_hist = [self.v_esc]
         self.dv_dr = 0
         self.dr_e = 0
+        self.integral_epsrel = integral_epsrel
+        self.integral_epsabs = integral_epsabs
         # this variable tracks whether the wind has reached the escape velocity
         self.escaped = False
 
@@ -192,6 +198,8 @@ class streamline():
                                             self.z,
                                             self.fm,
                                             self.tau_uv,
+                                            epsrel = self.integral_epsrel,
+                                            epsabs = self.integral_epsabs,
                                             return_error=False)
         self.a = fg
         if('gravityonly' in self.wind.modes):  # useful for debugging
@@ -320,7 +328,7 @@ class streamline():
                 self.dt = self.dt * 10.
 
             # termination condition for a failed wind #
-            if(((self.z <= self.z_0) and (self.v_z < 0.0))):# or ((self.z < np.max(self.z_hist)) and (self.v_z < 0.0))):
+            if(((self.z <= self.z_0) and (self.v_z < 0.0)) or ((self.z < np.max(self.z_hist)) and (self.v_z < 0.0) and self.terminate_stalling)):
                 print("Failed wind! \n")
                 break
 

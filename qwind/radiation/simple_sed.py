@@ -287,7 +287,7 @@ class SimpleSED:
         fm = max(0,fm)
         return fm
 
-    def force_radiation(self, r, z, fm, tau_uv, return_error=False, **kwargs):
+    def force_radiation(self, r, z, fm, tau_uv, return_error=False, no_tau_z=False, **kwargs):
         """
         Computes the radiation force at the point (r,z)
 
@@ -312,7 +312,13 @@ class SimpleSED:
             self.int_error_hist.append(error)
 
         self.int_hist.append(i_aux)
-        abs_uv = np.exp(-tau_uv)
+        if no_tau_z == True:
+            d = np.sqrt(r**2 + z**2)
+            sin_theta = z / d
+            cos_theta = r / d
+            abs_uv = np.exp(-tau_uv * np.array([sin_theta, 0, cos_theta]))
+        else:
+            abs_uv = np.exp(-tau_uv)
         constant = (1 + fm) * self.FORCE_RADIATION_CONSTANT
         force = abs_uv * constant  * np.asarray([i_aux[0],
                                                  0.,
