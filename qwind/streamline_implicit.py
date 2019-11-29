@@ -61,6 +61,7 @@ class streamline():
             terminate_stalling=True,
             max_steps=10000,
             no_tau_z=False,
+            no_tau_uv=False,
     ):
         """
         Args:
@@ -87,6 +88,8 @@ class streamline():
         self.terminate_stalling = terminate_stalling
         self.t_max = t_max * self.wind.RG / const.C
         self.no_tau_z = no_tau_z 
+        self.no_tau_uv = no_tau_uv
+
         # black hole and disc variables #
         self.T = T  # * u.K
         self.v_th = self.wind.thermal_velocity(self.T)
@@ -244,19 +247,19 @@ class streamline():
         if z < (self.z_0 - 0.01):
             raise BackToDisk 
 
-        if self.terminate_stalling:
-            if (z < np.max(self.z_hist)) and (v_z < 0):
-                raise BackToDisk
+        if (z < np.max(self.z_hist)) and (v_z < 0):
+            raise BackToDisk
         #print(self.solver.y)
         # stalling
-        if abs(v_T - self.v_th) < 1e-5:
-        ##    #y = self.solver.y
-        ##    ##ydot = self.solver.yd
-        ##    #y2 = y.copy()
-             print("stalling...")
-             self.stalling_timer += 1
-             if self.stalling_timer >= 3:
-                 raise Stalling
+        if self.terminate_stalling:
+            if abs(v_T - self.v_th) < 1e-5:
+            ##    #y = self.solver.y
+            ##    ##ydot = self.solver.yd
+            ##    #y2 = y.copy()
+                 print("stalling...")
+                 self.stalling_timer += 1
+                 if self.stalling_timer >= 3:
+                     raise Stalling
         #    #self.first_iter = True
         #    #if self.stalling_timer == 1:
         #    #    #y2[2] += 1e-5 * y2[2]
@@ -284,7 +287,14 @@ class streamline():
         v_T = np.sqrt(r_dot**2 + z_dot**2)
         fg = self.force_gravity(r,z)
         self.update_radiation(r, z, v_T, a_T, save_hist=False)
-        fr = self.radiation.force_radiation(r, z, self.fm, self.tau_uv, no_tau_z=self.no_tau_z, epsabs = self.integral_atol, epsrel=self.integral_rtol)[[0,2]]
+        fr = self.radiation.force_radiation(r,
+                                            z,
+                                            self.fm,
+                                            self.tau_uv,
+                                            no_tau_z=self.no_tau_z,
+                                            no_tau_uv=self.no_tau_uv,
+                                            epsabs = self.integral_atol,
+                                            epsrel=self.integral_rtol)[[0,2]]
         centrifugal_term = self.l**2 / r**3
         a_r = fg[0] + centrifugal_term# + fr[0]
         a_z = fg[-1]# + fr[-1]

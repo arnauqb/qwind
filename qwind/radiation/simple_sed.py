@@ -109,7 +109,7 @@ class SimpleSED:
         Returns:
             ionization parameter.
         """
-        DENSITY_FLOOR = 1e6
+        DENSITY_FLOOR = 1e2
         if r < self.wind.r_init:
             rho_shielding = DENSITY_FLOOR
             tau_x = tau_x / rho_shielding * DENSITY_FLOOR
@@ -130,7 +130,7 @@ class SimpleSED:
         Returns:
             difference between current ion. parameter and target one.
         """
-        tau_x = max(min(self.wind.tau_dr_0 * (rx - self.wind.r_init), 50), 0)
+        tau_x =  max(min(self.wind.tau_dr_0 * (rx - self.wind.r_init), 50), 0)
         xi = self.ionization_parameter(rx, 0, tau_x, self.wind.rho_shielding)
         ionization_difference = const.IONIZATION_PARAMETER_CRITICAL - xi
         return ionization_difference
@@ -287,7 +287,7 @@ class SimpleSED:
         fm = max(0,fm)
         return fm
 
-    def force_radiation(self, r, z, fm, tau_uv, return_error=False, no_tau_z=False, **kwargs):
+    def force_radiation(self, r, z, fm, tau_uv, return_error=False, no_tau_z=False, no_tau_uv=False, **kwargs):
         """
         Computes the radiation force at the point (r,z)
 
@@ -317,6 +317,8 @@ class SimpleSED:
             sin_theta = z / d
             cos_theta = r / d
             abs_uv = np.exp(-tau_uv * np.array([sin_theta, 0, cos_theta]))
+        elif no_tau_uv == True:
+            abs_uv = 1
         else:
             abs_uv = np.exp(-tau_uv)
         constant = (1 + fm) * self.FORCE_RADIATION_CONSTANT

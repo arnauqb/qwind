@@ -52,8 +52,8 @@ def save_results(wind, folder_name="Results"):
             #'V_PHI': line.v_phi_hist,
             'V_Z': line.v_z_hist,
             'V_T': line.v_T_hist,
-            'a_r': a_hist[:,0],
-            'a_z': a_hist[:,-1],
+            #'a_r': a_hist[:,0],
+            #'a_z': a_hist[:,-1],
             'rho': line.rho_hist,
             'xi': line.xi_hist,
             'fm': line.fm_hist,
@@ -62,7 +62,7 @@ def save_results(wind, folder_name="Results"):
             'tau_x': line.tau_x_hist,
             'dv_dr': line.dv_dr_hist,
             'escaped': line.escaped * np.ones(len(line.rho_hist)),
-            'V_esc': line.v_esc_hist,
+            #'V_esc': line.v_esc_hist,
         }
         df = pd.DataFrame.from_dict(data)
         df.to_csv(lines_file, index=False)
