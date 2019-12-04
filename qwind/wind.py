@@ -12,6 +12,8 @@ import qwind.constants as const
 from qwind.radiation import simple_sed
 from qwind import utils
 
+from assimulo.solvers.sundials import IDAError
+
 
 def evolve(line, niter):
     line.iterate(niter=niter)
@@ -262,19 +264,23 @@ class Qwind:
                                         ))
         i = 0
         if(self.n_cpus == 1):
-            for line in self.lines:
-                i += 1
-                print("Line %d of %d" % (i, len(self.lines)))
-                line.iterate(niter=niter)
-                max_height_point = np.argmax(line.z_hist)
-                z_max = line.z_hist[max_height_point]
-                r_max = line.r_hist[max_height_point]
-                tantheta = z_max / r_max
-                line.tanthetamax = tantheta
-                #if tantheta >= self.tanthetamax:
-                #    self.tanthetamax = tantheta
-                #    print("hi")
-                #print(tantheta, self.tanthetamax)
+            try:
+                for line in self.lines:
+                    i += 1
+                    print("Line %d of %d" % (i, len(self.lines)))
+                    line.iterate(niter=niter)
+                    max_height_point = np.argmax(line.z_hist)
+                    z_max = line.z_hist[max_height_point]
+                    r_max = line.r_hist[max_height_point]
+                    tantheta = z_max / r_max
+                    line.tanthetamax = tantheta
+                    #if tantheta >= self.tanthetamax:
+                    #    self.tanthetamax = tantheta
+                    #    print("hi")
+                    #print(tantheta, self.tanthetamax)
+            except IDAError:
+                print("Terminating gracefully...")
+                pass
             self.mdot_w, self.kinetic_luminosity, self.angle, self.v_terminal = self.compute_wind_properties()
             return self.lines
         print("multiple cpus")

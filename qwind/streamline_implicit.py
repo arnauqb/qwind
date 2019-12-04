@@ -58,7 +58,8 @@ class streamline():
             integral_atol=0,
             integral_rtol=1e-4,
             t_max = 10000,
-            terminate_stalling=True,
+            d_max = 1e5,
+            terminate_stalling=False,
             max_steps=10000,
             no_tau_z=False,
             no_tau_uv=False,
@@ -87,6 +88,7 @@ class streamline():
         self.max_steps = max_steps
         self.terminate_stalling = terminate_stalling
         self.t_max = t_max * self.wind.RG / const.C
+        self.d_max = d_max
         self.no_tau_z = no_tau_z 
         self.no_tau_uv = no_tau_uv
 
@@ -241,7 +243,7 @@ class streamline():
         v_T = np.sqrt(v_r**2 + v_z**2)
         a_T = np.sqrt(solver.yd[2]**2 + solver.yd[3]**2)
         self.update_radiation(r, z, v_T, a_T, save_hist=True)
-        if d > 1e5:
+        if d > self.d_max:
             self.escaped = True
             raise Escape 
         if z < (self.z_0 - 0.01):
