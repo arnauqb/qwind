@@ -57,7 +57,7 @@ class streamline():
             solver_rtol=1e-6,
             solver_atol=1e-3,
             integral_atol=0,
-            integral_rtol=1e-4,
+            integral_rtol=1e-3,
             t_max = 10000,
             d_max = 1e5,
             terminate_stalling=False,

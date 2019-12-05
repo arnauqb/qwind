@@ -318,6 +318,9 @@ class Radiation:
         """
         i_aux = self.integrator.integrate(r,
                                           z,
+                                          self.wind.density_grid.grid,
+                                          self.wind.density_grid.grid_r_range,
+                                          self.wind.density_grid.grid_z_range,
                                           self.wind.disk_r_min,
                                           self.wind.disk_r_max,
                                           **kwargs)
