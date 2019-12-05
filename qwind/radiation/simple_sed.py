@@ -190,8 +190,7 @@ class SimpleSED:
             X-Ray optical depth at the point (r,z)
         """
         tau_x_0 = max(self.r_x - self.wind.r_init,0)
-        if (self.r_x < r_0):
-            tau_x_0 += max(100 * (r_0 - self.r_x), 0)
+        tau_x_0 += max(100 * (r_0 - self.r_x), 0)
         distance = np.sqrt(r ** 2 + z ** 2)
         sec_theta = distance / r
         delta_r = abs(r - r_0)

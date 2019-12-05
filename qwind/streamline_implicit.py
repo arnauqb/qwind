@@ -3,7 +3,7 @@ This module implements the streamline class, that initializes and evolves a stre
 """
 
 import numpy as np
-from scipy import integrate
+from scipy import integrate, interpolate
 from qwind import utils
 from decimal import Decimal, DivisionByZero
 from qwind import constants as const
@@ -58,7 +58,8 @@ class streamline():
             integral_atol=0,
             integral_rtol=1e-4,
             t_max = 10000,
-            terminate_stalling=True,
+            d_max = 1e5,
+            terminate_stalling=False,
             max_steps=10000,
             no_tau_z=False,
             no_tau_uv=False,
@@ -87,6 +88,7 @@ class streamline():
         self.max_steps = max_steps
         self.terminate_stalling = terminate_stalling
         self.t_max = t_max * self.wind.RG / const.C
+        self.d_max = d_max
         self.no_tau_z = no_tau_z 
         self.no_tau_uv = no_tau_uv
 
@@ -111,7 +113,7 @@ class streamline():
         Z_0 = z_0
         self.v_r = v_r_0 / const.C
         self.v_r_0 = v_r_0 / const.C
-        self.v_r_hist = [self.v_r]
+        self.v_r_hist = []
         self.v_phi = self.wind.v_kepler(r_0)
         self.l = self.v_phi * self.r  # initial angular momentum
         self.v_phi_0 = self.v_phi
@@ -121,7 +123,7 @@ class streamline():
         self.v_T_0 = np.sqrt(self.v_z ** 2 + self.v_r ** 2)
         self.v_T = self.v_T_0
         self.v_esc = self.wind.v_esc(self.d)
-        self.v_esc_hist = [self.v_esc]
+        self.v_esc_hist = []
         self.dv_dr = 0
         self.dr_e = 0
         # this variable tracks whether the wind has reached the escape velocity
@@ -129,7 +131,7 @@ class streamline():
 
         ## optical depths ##
         self.tau_dr = self.wind.tau_dr(self.rho)
-        self.tau_dr_hist = [self.tau_dr]
+        self.tau_dr_hist = []
         self.tau_dr_0 = self.tau_dr
         self.tau_dr_shielding = self.wind.tau_dr(self.wind.rho_shielding)
 
@@ -154,42 +156,42 @@ class streamline():
         self.Fgrav = []
         self.Frad = []
         self.iter = []
-        self.fg_hist=[self.force_gravity(self.r_0,self.z_0)]
-        self.fr_hist=[frad]#self.radiation.force_radiation(self.r_0,self.z_0,self.fm,self.tau_uv)]
+        self.fg_hist=[]
+        self.fr_hist=[]#self.radiation.force_radiation(self.r_0,self.z_0,self.fm,self.tau_uv)]
 
         #### history variables ####
 
         # position and velocities histories #
-        self.x_hist = [self.x]
-        self.d_hist = [self.d]
-        self.t_hist = [0]
-        self.r_hist = [r_0]
-        self.phi_hist = [0]
-        self.z_hist = [z_0]
-        self.v_phi_hist = [self.v_phi]
-        self.v_z_hist = [self.v_z]
-        self.v_hist = [self.v]
-        self.v_T_hist = [self.v_T_0]
+        self.x_hist = []
+        self.d_hist = []
+        self.t_hist = []
+        self.r_hist = []
+        self.phi_hist = []
+        self.z_hist = []
+        self.v_phi_hist = []
+        self.v_z_hist = []
+        self.v_hist = []
+        self.v_T_hist = []
         self.dv_hist = []
         self.delta_r_sob_hist = []
 
         # radiation related histories #
-        self.rho_hist = [self.rho]
-        self.tau_dr_hist = [self.tau_dr]
-        self.dvt_hist = [0]
-        self.v2_hist = [0]
-        self.dv_dr_hist = [0]
-        self.dr_e_hist = [self.dr_e]
-        self.tau_uv_hist = [self.tau_uv]
-        self.tau_x_hist = [self.tau_x]
-        self.tau_eff_hist = [0]
+        self.rho_hist = []
+        self.tau_dr_hist = []
+        self.dvt_hist = []
+        self.v2_hist = []
+        self.dv_dr_hist = []
+        self.dr_e_hist = []
+        self.tau_uv_hist = []
+        self.tau_x_hist = []
+        self.tau_eff_hist = []
         self.taumax_hist = []
-        self.fm_hist = [1]
-        self.xi_hist = [self.xi]
+        self.fm_hist = []
+        self.xi_hist = []
 
         #force histories #
-        self.a_hist = [self.a]
-        self.a_T_hist = [0]
+        self.a_hist = []
+        self.a_T_hist = []
 
         y_0 = [self.r_0, self.z_0, self.v_r_0, self.v_z_0]
         yd_0 = [self.v_r_0, self.v_z_0, self.a_0[0], self.a_0[1]]
@@ -241,11 +243,13 @@ class streamline():
         v_T = np.sqrt(v_r**2 + v_z**2)
         a_T = np.sqrt(solver.yd[2]**2 + solver.yd[3]**2)
         self.update_radiation(r, z, v_T, a_T, save_hist=True)
-        if d > 1e5:
+        if d > self.d_max:
             self.escaped = True
             raise Escape 
         if z < (self.z_0 - 0.01):
             raise BackToDisk 
+        if r < (self.r_0 - 0.01):
+            raise BackToDisk
 
         if (z < np.max(self.z_hist)) and (v_z < 0):
             raise BackToDisk
@@ -370,6 +374,13 @@ class streamline():
         if save_hist:
             self.save_hist()
 
+    def generate_interpolation(self, hist):
+        """
+        Creates UnivariateSpline for interpolating results.
+        """
+        us = interpolate.UnivariateSpline(x=self.t_hist, y=hist) 
+        return us
+
     def iterate(self, niter=5000):
         """
         Iterates the streamline
@@ -403,6 +414,12 @@ class streamline():
         except Stalling:
             print("Line stalled!")
             pass
+        except KeyboardInterrupt:
+            print("Exiting gracefully")
+            pass
+        self.r_interpolator= self.generate_interpolation(self.r_hist)
+        self.z_interpolator= self.generate_interpolation(self.z_hist)
+        self.rho_interpolator = self.generate_interpolation(self.rho_hist)
 
             #print("Stalled! resetting...")
             #self.solver.finalize()
