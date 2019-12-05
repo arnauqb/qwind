@@ -6,7 +6,35 @@ import numpy as np
 from scipy import integrate, interpolate, optimize
 
 import qwind.constants as const
-from qwind.integration import qwind1 as integration 
+from qwind.integration import qwind2 as integration 
+
+#@jit(nopython=True)
+def find_index(r,z, grid_r_range, grid_z_range):
+    r_idx = np.argmin(np.abs(grid_r_range - r))
+    z_idx = np.argmin(np.abs(grid_z_range - z))
+    return [r_idx, z_idx]
+
+#@jit(nopython=True)
+def current_position_cartesian(t, r_d, phi_d, r, z):
+    x = r_d * np.cos(phi_d) + t * (r - r_d * np.cos(phi_d))
+    y = r_d * np.sin(phi_d) + t * (- r_d * np.sin(phi_d))
+    z = t * z
+    return [x, y, z]
+
+def optical_depth_uv_integrand_density(x, y, z, grid, grid_r_range, grid_z_range):
+    r = np.sqrt(x**2 + y**2)
+    r_arg, z_arg = find_index(r, z, grid_r_range, grid_z_range)
+    density = density_grid[r_arg, z_arg]
+    return density
+
+
+#@jit(nopyton=True)
+def optical_depth_uv_integrand(t, r_d, phi_d, r, z, grid, grid_r_range, grid_z_range):
+    x, y, z = current_position_cartesian(t, r_d, phi_d, r, z)
+    dtau = const.SIGMA_T * optical_depth_uv_integrand_density(x,y,z, grid, grid_r_range, grid_z_range)
+    return dtau
+
+
 
 
 class Radiation:
@@ -28,6 +56,7 @@ class Radiation:
             (8. * np.pi * self.wind.eta) * self.uv_fraction
         self.int_hist = []
         self.int_error_hist = []
+        self.integrator = integration.Integrator(self)
 
         # interpolation values for force multiplier #
         K_INTERP_XI_VALUES = [-4, -3, -2.26, -2.00, -1.50, -1.00,
@@ -65,36 +94,24 @@ class Radiation:
                 ETAMAX_INTERP_ETAMAX_VALUES[-1]),
             kind='cubic')  # important! xi is log here
 
-    def optical_depth_uv(self, r, z, r_0, tau_dr, tau_dr_0):
+    
+    def optical_depth_uv(self, r_d, phi_d, r, z):
         """
         UV optical depth.
 
         Args:
             r: radius in Rg units.
             z: height in Rg units.
-            r_0: initial streamline radius.
-            tau_dr: charact. optical depth
-            tau_dr_0: initial charact. optical depth
 
         Returns:
             UV optical depth at point (r,z) 
         """
-        delta_r_0 = abs(r_0 - self.wind.r_init)
-        delta_r = abs(r - r_0 - self.dr/2)
-        distance = np.sqrt(r**2 + z**2)
-        sec_theta = distance / r
-        tau_uv = sec_theta * (delta_r_0 * tau_dr_0 + delta_r * tau_dr)
-        tau_uv = min(tau_uv, 50)
-        if tau_uv < 0:
-            print("warning")
-        tau_uv = max(tau_uv,0)
-        try:
-            assert tau_uv >= 0, "UV optical depth cannot be negative!"
-        except AssertionError:
-            print(f"r: {r} \n z : {z} \n r_0 : {r_0}\n tau_dr: {tau_dr} \n tau_dr_0: {tau_dr_0} \n\n")
-            raise AssertionError 
+        line_element = np.sqrt(r**2 + r_d**2 + z**2 - 2 * r * r_d * np.cos(phi_d))
+        tau_uv_int = integrate.quad(lambda t: optical_depth_uv_integrand(t, r_d, phi_d, r, z, grid, grid_r_range, grid_z_range), 0, 1)[0]
+        tau_uv = tau_uv_int * line_element * self.wind.RG
         return tau_uv
-
+         
+        
     def ionization_parameter(self, r, z, tau_x, rho_shielding):
         """
         Computes Ionization parameter.
@@ -286,7 +303,7 @@ class Radiation:
         fm = max(0,fm)
         return fm
 
-    def force_radiation(self, r, z, fm, tau_uv, return_error=False, no_tau_z=False, no_tau_uv=False, **kwargs):
+    def force_radiation(self, r, z, fm, return_error=False, no_tau_z=False, no_tau_uv=False, **kwargs):
         """
         Computes the radiation force at the point (r,z)
 
@@ -299,33 +316,20 @@ class Radiation:
         Returns:
             radiation force at the point (r,z) boosted by fm and attenuated by e^tau_uv.
         """
-        if('old_integral' in self.wind.modes):
-            i_aux = integration.qwind_old_integration(r, z)
-        if('non_relativistic' in self.wind.modes):
-            i_aux = integration.qwind_integration_dblquad(
-                r, z, self.wind.disk_r_min, self.wind.disk_r_max, **kwargs)
-        else:
-            i_aux = integration.qwind_integration_rel(
-                r, z, self.wind.disk_r_min, self.wind.disk_r_max, **kwargs)
-            error = i_aux[2:4]
-            self.int_error_hist.append(error)
+        i_aux = self.integrator.integrate(r,
+                                          z,
+                                          self.wind.disk_r_min,
+                                          self.wind.disk_r_max,
+                                          **kwargs)
 
+        error = i_aux[2:4]
+        self.int_error_hist.append(error)
         self.int_hist.append(i_aux)
-        if no_tau_z == True:
-            d = np.sqrt(r**2 + z**2)
-            sin_theta = z / d
-            cos_theta = r / d
-            tau_uv = tau_uv * np.array([cos_theta, 0, sin_theta])
-            abs_uv = np.exp(-tau_uv)
-        elif no_tau_uv == True:
-            abs_uv = 1
-        else:
-            abs_uv = np.exp(-tau_uv)
         constant = (1 + fm) * self.FORCE_RADIATION_CONSTANT
-        force = abs_uv * constant  * np.asarray([i_aux[0],
-                                                 0.,
-                                                 i_aux[1],
-                                                 ])
+        force = constant  * np.asarray([i_aux[0],
+                                        0.,
+                                        i_aux[1],
+                                        ])
         assert force[2] >= 0
         if return_error:
             error = constant * np.array(error)

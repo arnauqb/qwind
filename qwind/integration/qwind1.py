@@ -335,5 +335,3 @@ def qwind_old_integration(r, z):
     integral[0] = 2. * z * integral[0]
     integral[1] = 2. * z**2. * integral[1]
     return integral
-
-

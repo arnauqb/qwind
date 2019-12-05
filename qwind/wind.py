@@ -1,6 +1,7 @@
 import os
 import shutil
 import sys
+import importlib
 from multiprocessing import Pool
 
 import numpy as np
@@ -9,8 +10,8 @@ from numba import jit, jitclass
 from scipy import interpolate
 
 import qwind.constants as const
-from qwind.radiation import simple_sed
-from qwind import utils
+from qwind import utils, grid
+from qwind.integration import qwind2 as integration
 
 from assimulo.solvers.sundials import IDAError
 
@@ -43,6 +44,8 @@ class Qwind:
                  nr=20,
                  d_max=1e5,
                  save_dir=None,
+                 radiation_class="simple_sed",
+                 solver="ida",
                  n_cpus=1):
         """
         Parameters
@@ -82,6 +85,9 @@ class Qwind:
         """
 
         self.n_cpus = n_cpus
+        self.density_grid = grid.Grid()
+        #self.grid_r_range = np.linspace(0,2000,50)
+        #self.grid_z_range = np.linspace(0,2000,50)
 
         # array containing different modes for debugging #
         self.modes = modes
@@ -97,6 +103,19 @@ class Qwind:
         self.d_max = d_max
         self.rho_shielding = rho_shielding
 
+        if solver == "euler":
+            from qwind.streamline.euler import streamline as streamline_solver
+        elif solver == "rk4":
+            from qwind.streamline.rk4 import streamline as streamline_solver 
+        elif solver == "ida":
+            from qwind.streamline.ida import streamline as streamline_solver 
+        elif solver == "ida_interp":
+            from qwind.streamline.ida_interp import streamline as streamline_solver 
+        else:
+            print("solver not found")
+            raise Exception
+        self.streamline_solver = streamline_solver
+
         self.RG = const.G * self.M / (const.C ** 2)  # gravitational radius
 
         self.bol_luminosity = self.mdot * self.eddington_luminosity
@@ -111,7 +130,10 @@ class Qwind:
         self.r_init = self.lines_r_range[0]
 
         # initialize radiation class
-        self.radiation = simple_sed.SimpleSED(self)
+        radiation_module_name = "qwind.radiation." + radiation_class
+        print(radiation_module_name)
+        radiation_module = importlib.import_module(radiation_module_name)
+        self.radiation = radiation_module.Radiation(self)
         
         self.tau_dr_shielding = self.tau_dr(self.rho_shielding)
 
@@ -129,6 +151,7 @@ class Qwind:
         
         self.lines = []  # list of streamline objects
         self.lines_hist = []  # save all iterations info
+                #integration.grid = self.density_grid
 
     def v_kepler(self, r):
         """
@@ -218,13 +241,7 @@ class Qwind:
             temperature = self.radiation.sed_class.disk_nt_temperature4(r_0)**(1./4.)
             v_z_0  = self.thermal_velocity(temperature) * const.C
             rho_0 = self.radiation.sed_class.disk_number_density(r_0)
-        if "rk4" in self.modes:
-            from qwind.streamline_rk4 import streamline
-        elif "implicit" in self.modes:
-            from qwind.streamline_implicit import streamline
-        else:
-            from qwind.streamline import streamline
-        return streamline(
+        return self.streamline_solver(
             self.radiation,
             wind=self,
             r_0=r_0,
@@ -278,6 +295,7 @@ class Qwind:
                     #    self.tanthetamax = tantheta
                     #    print("hi")
                     #print(tantheta, self.tanthetamax)
+                self.grid.update_grid(self)
             except IDAError:
                 print("Terminating gracefully...")
                 pass
