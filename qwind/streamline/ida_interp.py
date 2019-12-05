@@ -46,6 +46,7 @@ class streamline():
             self,
             radiation_class,
             wind,
+            line_width=20,
             r_0=375.,
             z_0=10.,
             rho_0=2e8,
@@ -75,6 +76,7 @@ class streamline():
             v_r_0 : Initial radial velocity in units of cm/s.
             dt : Timestep in units of Rg/c.
         """
+        self.line_width = line_width
         self.wind = wind
         self.radiation = radiation_class
         if "debug_mode" in self.wind.modes:
@@ -141,52 +143,45 @@ class streamline():
         self.xi = self.radiation.ionization_parameter(
             self.r, self.z, self.tau_x, self.wind.rho_shielding)  # self.wind.Xi(self.d, self.z / self.r)
         
-        #fgrav = self.force_gravity(self.r_0, self.z_0)
-        #frad = self.radiation.force_radiation(self.r_0, self.z_0, self.fm, epsabs = self.integral_atol, epsrel = self.integral_rtol)[[0,-1]]
-        #centrifugal_term = self.l**2 / self.r_0**3
-        #a_r = fgrav[0] + frad[0] + centrifugal_term
-        #a_z = fgrav[-1] + frad[-1]
-        self.a_0 = np.array([0,0])#np.array([a_r, a_z])  # / u.s**2
+        fgrav = self.force_gravity(self.r_0, self.z_0)
+        frad = self.radiation.force_radiation(self.r_0, self.z_0, self.fm, epsabs = self.integral_atol, epsrel = self.integral_rtol)[[0,-1]]
+        centrifugal_term = self.l**2 / self.r_0**3
+        a_r = fgrav[0] + frad[0] + centrifugal_term
+        a_z = fgrav[-1] + frad[-1]
+        self.a_0 = np.array([a_r, a_z])  # / u.s**2
         self.a = self.a_0
+        self.a_T = np.sqrt(self.a[0]**2 + self.a[-1]**2)
 
         # hists # 
         # force related variables #
-        self.fg_hist=[]
-        self.fr_hist=[]#self.radiation.force_radiation(self.r_0,self.z_0,self.fm,self.tau_uv)]
+        self.fg_hist=[fgrav]
+        self.fr_hist=[frad]
 
         #### history variables ####
 
         # position and velocities histories #
-        self.t_hist = []
-        self.r_hist = []
-        self.phi_hist = []
-        self.v_r_hist = []
-        self.z_hist = []
-        self.v_phi_hist = []
-        self.v_z_hist = []
-        self.v_hist = []
-        self.v_T_hist = []
-        self.v_esc_hist = []
-        self.dv_hist = []
-        self.delta_r_sob_hist = []
+        self.t_hist = [self.t]
+        self.r_hist = [self.r]
+        self.phi_hist = [self.phi]
+        self.v_r_hist = [self.v_r]
+        self.z_hist = [self.z]
+        self.v_phi_hist = [self.v_phi]
+        self.v_z_hist = [self.v_z]
+        self.v_T_hist = [self.v_T]
+        self.v_esc_hist = [self.v_esc]
 
         # radiation related histories #
-        self.rho_hist = []
-        self.tau_dr_hist = []
-        self.dvt_hist = []
-        self.v2_hist = []
-        self.dv_dr_hist = []
-        self.dr_e_hist = []
-        self.tau_uv_hist = []
-        self.tau_x_hist = []
-        self.tau_eff_hist = []
-        self.taumax_hist = []
-        self.fm_hist = []
-        self.xi_hist = []
+        self.rho_hist = [self.rho]
+        self.tau_dr_hist = [self.tau_dr]
+        self.dv_dr_hist = [self.dv_dr]
+        self.tau_x_hist = [self.tau_x]
+        self.tau_eff_hist = [self.tau_eff]
+        self.fm_hist = [self.fm]
+        self.xi_hist = [self.xi]
 
         #force histories #
-        self.a_hist = []
-        self.a_T_hist = []
+        self.a_hist = [self.a]
+        self.a_T_hist = [self.a_T]
 
         y_0 = [self.r_0, self.z_0, self.v_r_0, self.v_z_0]
         yd_0 = [self.v_r_0, self.v_z_0, self.a_0[0], self.a_0[1]]
@@ -246,8 +241,8 @@ class streamline():
         if r < (self.r_0 - 0.01):
             raise BackToDisk
 
-        if (z < np.max(self.z_hist)) and (v_z < 0):
-            raise BackToDisk
+        #if (z < np.max(self.z_hist)) and (v_z < 0):
+        #    raise BackToDisk
         #print(self.solver.y)
         # stalling
         if self.terminate_stalling:
@@ -367,13 +362,6 @@ class streamline():
         if save_hist:
             self.save_hist()
 
-    def generate_interpolation(self, hist):
-        """
-        Creates UnivariateSpline for interpolating results.
-        """
-        us = interpolate.UnivariateSpline(x=self.t_hist, y=hist) 
-        return us
-
     def iterate(self, niter=5000):
         """
         Iterates the streamline
@@ -410,9 +398,6 @@ class streamline():
         except KeyboardInterrupt:
             print("Exiting gracefully")
             pass
-        self.r_interpolator= self.generate_interpolation(self.r_hist)
-        self.z_interpolator= self.generate_interpolation(self.z_hist)
-        self.rho_interpolator = self.generate_interpolation(self.rho_hist)
 
             #print("Stalled! resetting...")
             #self.solver.finalize()

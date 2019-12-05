@@ -13,7 +13,7 @@ from scipy.integrate import quad
 
 from qwind import constants as const
 RG = 0. 
-DENSITY_FLOOR = 1e2
+DENSITY_FLOOR = 2e8
 grid = DENSITY_FLOOR * np.ones((500,500)) 
 grid_r_range = np.zeros(500) 
 grid_z_range = np.zeros(500) 
@@ -64,40 +64,6 @@ def jit_integrand(integrand_function):
     cf = cfunc(float64(intc, CPointer(float64)))
 
     return LowLevelCallable(cf(wrapped).ctypes)
-
-#def jit_integrand2(integrand_function):
-#    """
-#    Turns a function into a LowLevelCallable function.
-#    """
-#
-#    jitted_function = jit(integrand_function, nopython=True, cache=True)
-#    no_args = len(inspect.getfullargspec(integrand_function).args)
-#
-#    wrapped = None
-#
-#    if no_args == 4:
-#        # noinspection PyUnusedLocal
-#        def wrapped(n, xx):
-#            return jitted_function(xx[0], xx[1], xx[2], xx[3])
-#    elif no_args == 5:
-#        # noinspection PyUnusedLocal
-#        def wrapped(n, xx):
-#            return jitted_function(xx[0], xx[1], xx[2], xx[3], xx[4])
-#    elif no_args == 6:
-#        # noinspection PyUnusedLocal
-#        def wrapped(n, xx):
-#            return jitted_function(xx[0], xx[1], xx[2], xx[3], xx[4], xx[5])
-#    elif no_args == 7:
-#        # noinspection PyUnusedLocal
-#        def wrapped(n, xx):
-#            return jitted_function(xx[0], xx[1], xx[2], xx[3], xx[4], xx[5], xx[6])
-#    #cf = cfunc(float64(intc, CPointer(float64)))
-#    
-#
-#    cf = cfunc(CPointer(int32)(
-#
-#    return LowLevelCallable(cf(wrapped).ctypes)
-
 
 
 @jit(nopython=True)
@@ -157,16 +123,12 @@ def optical_depth_uv(r_d, phi_d, r, z):
     """
     line_element = np.sqrt(r**2 + r_d**2 + z**2 - 2 * r * r_d * np.cos(phi_d))
     t_range = np.linspace(0,1)
-    #int_values = []
-    #for t in t_range:
-    #    int_values.append(optical_depth_uv_integrand(t, r_d, phi_d, r, z))
     int_values = optical_depth_uv_integrand(t_range, r_d, phi_d, r, z)
     tau_uv_int = np.trapz(x=t_range, y=int_values)
     tau_uv = tau_uv_int * line_element * RG
     return tau_uv
 
 
-#@jit(nopython=True)
 @jit_integrand
 def _integrate_r_kernel(phi_d, r_d, r, z):
     """
@@ -190,7 +152,6 @@ def _integrate_r_kernel(phi_d, r_d, r, z):
     ff = ff0 * cos_gamma * abs_uv
     return ff
 
-#@jit(nopython=True)
 @jit_integrand
 def _integrate_z_kernel(phi_d, r_d, r, z):
     """

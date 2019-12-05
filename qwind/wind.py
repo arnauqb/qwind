@@ -1,4 +1,3 @@
-import os
 import shutil
 import sys
 import importlib
@@ -127,6 +126,7 @@ class Qwind:
         dr = (self.lines_r_max - self.lines_r_min) / (nr - 1)
         self.lines_r_range = [self.lines_r_min +
                               (i-0.5) * dr for i in range(1, nr+1)]
+        self.lines_widths = np.diff(self.lines_r_range)
         self.r_init = self.lines_r_range[0]
 
         # initialize radiation class
@@ -254,7 +254,14 @@ class Qwind:
             **kwargs,
         )
 
-    def start_lines(self, derive_from_ss=False, v_z_0=1e7, niter=5000, rho_0=2e8, z_0=1, dt=4.096/10, **kwargs):
+    def start_lines(self,
+                    derive_from_ss=False,
+                    v_z_0=1e7,
+                    niter=5000,
+                    rho_0=2e8,
+                    z_0=1,
+                    dt=4.096/10,
+                    **kwargs):
         """
         Starts and evolves a set of equally spaced streamlines.
 
@@ -269,9 +276,9 @@ class Qwind:
         """
         print("Starting line iteration")
         self.lines = []
-        #self.tanthetamax = -1
-        for i, r in enumerate(self.lines_r_range):
+        for i, r in enumerate(self.lines_r_range[:-1]):
             self.lines.append(self.line(r_0=r,
+                                        line_width = self.lines_widths[i],
                                         derive_from_ss=derive_from_ss,
                                         v_z_0=v_z_0,
                                         rho_0=rho_0,
@@ -286,16 +293,7 @@ class Qwind:
                     i += 1
                     print("Line %d of %d" % (i, len(self.lines)))
                     line.iterate(niter=niter)
-                    max_height_point = np.argmax(line.z_hist)
-                    z_max = line.z_hist[max_height_point]
-                    r_max = line.r_hist[max_height_point]
-                    tantheta = z_max / r_max
-                    line.tanthetamax = tantheta
-                    #if tantheta >= self.tanthetamax:
-                    #    self.tanthetamax = tantheta
-                    #    print("hi")
-                    #print(tantheta, self.tanthetamax)
-                self.grid.update_grid(self)
+                self.density_grid.update_grid(self)
             except IDAError:
                 print("Terminating gracefully...")
                 pass

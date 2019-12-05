@@ -46,6 +46,7 @@ class streamline():
             self,
             radiation_class,
             wind,
+            line_width=20,
             r_0=375.,
             z_0=10.,
             rho_0=2e8,
@@ -78,6 +79,7 @@ class streamline():
         """
         self.wind = wind
         self.radiation = radiation_class
+        self.line_width=20,
         if "debug_mode" in self.wind.modes:
             self.streamline_pos = np.loadtxt("streamline.txt")
 
