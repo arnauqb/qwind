@@ -315,7 +315,8 @@ class SimpleSED:
             d = np.sqrt(r**2 + z**2)
             sin_theta = z / d
             cos_theta = r / d
-            abs_uv = np.exp(-tau_uv * np.array([cos_theta, 0, sin_theta]))
+            tau_uv = tau_uv * np.array([cos_theta, 0, sin_theta])
+            abs_uv = np.exp(-tau_uv)
         elif no_tau_uv == True:
             abs_uv = 1
         else:
