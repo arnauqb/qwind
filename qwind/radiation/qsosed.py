@@ -4,37 +4,28 @@ This module handles the radiation transfer aspects of Qwind.
 
 import numpy as np
 from scipy import integrate, interpolate, optimize
+from qwind.integration import qwind2 as integration 
+from numba import njit
+from qsosed import sed
 
 import qwind.constants as const
-from qwind.integration import qwind2 as integration 
-
-#@jit(nopython=True)
-def find_index(r,z, grid_r_range, grid_z_range):
-    r_idx = np.argmin(np.abs(grid_r_range - r))
-    z_idx = np.argmin(np.abs(grid_z_range - z))
-    return [r_idx, z_idx]
-
-#@jit(nopython=True)
-def current_position_cartesian(t, r_d, phi_d, r, z):
-    x = r_d * np.cos(phi_d) + t * (r - r_d * np.cos(phi_d))
-    y = r_d * np.sin(phi_d) + t * (- r_d * np.sin(phi_d))
-    z = t * z
-    return [x, y, z]
-
-def optical_depth_uv_integrand_density(x, y, z, grid, grid_r_range, grid_z_range):
-    r = np.sqrt(x**2 + y**2)
-    r_arg, z_arg = find_index(r, z, grid_r_range, grid_z_range)
-    density = density_grid[r_arg, z_arg]
-    return density
 
 
-#@jit(nopyton=True)
-def optical_depth_uv_integrand(t, r_d, phi_d, r, z, grid, grid_r_range, grid_z_range):
-    x, y, z = current_position_cartesian(t, r_d, phi_d, r, z)
-    dtau = const.SIGMA_T * optical_depth_uv_integrand_density(x,y,z, grid, grid_r_range, grid_z_range)
-    return dtau
+def cooling_g_compton(T, xi, Tx=1e8):
+    g_compton = 8.9e-36 * xi * (Tx - 4 * T)
+    return g_compton
 
+def cooling_g_photoi(T, xi, Tx=1e8):
+    g_photo = 1.5e-21 * xi**(1./4.) * T**(0.5) * ( 1. - T/Tx)
+    return g_photo
 
+def cooling_brem(T, xi):
+    lbl = 3.3e-27 * T**(0.5) + 1.7e-18 / (xi * T**(0.5)) * np.exp(-1.3e5 / T) + 1e-24
+    return lbl
+
+def cooling_total(T, n, xi, Tx=1e8):
+    total = n**2 * (cooling_g_compton(T, xi, Tx) + cooling_g_photoi(T, xi, Tx) - cooling_brem(T, xi))
+    return total
 
 
 class Radiation:
@@ -45,17 +36,18 @@ class Radiation:
 
     def __init__(self, wind):
         self.wind = wind
+        self.qsosed = sed.SED(self.wind.M / const.M_SUN, self.wind.mdot)
         self.xray_fraction = self.wind.f_x 
         self.uv_fraction = 1 - self.wind.f_x
         self.dr = (self.wind.lines_r_max - self.wind.lines_r_min) / (self.wind.nr - 1)
         self.wind.tau_dr_0 = self.wind.tau_dr(self.wind.rho_shielding)
         self.xray_luminosity = self.wind.mdot * \
             self.wind.eddington_luminosity * self.xray_fraction
-        self.r_x = self.ionization_radius()
         self.FORCE_RADIATION_CONSTANT = 3. * self.wind.mdot / \
             (8. * np.pi * self.wind.eta) * self.uv_fraction
         self.int_hist = []
         self.int_error_hist = []
+
         self.integrator = integration.Integrator(self)
 
         # interpolation values for force multiplier #
@@ -94,23 +86,41 @@ class Radiation:
                 ETAMAX_INTERP_ETAMAX_VALUES[-1]),
             kind='cubic')  # important! xi is log here
 
-    
-    def optical_depth_uv(self, r_d, phi_d, r, z):
+    def optical_depth_uv(self,r, z, r_0, tau_dr, tau_dr_shielding):
         """
         UV optical depth.
-
+        
         Args:
             r: radius in Rg units.
             z: height in Rg units.
-
+        
         Returns:
             UV optical depth at point (r,z) 
         """
-        line_element = np.sqrt(r**2 + r_d**2 + z**2 - 2 * r * r_d * np.cos(phi_d))
-        tau_uv_int = integrate.quad(lambda t: optical_depth_uv_integrand(t, r_d, phi_d, r, z, grid, grid_r_range, grid_z_range), 0, 1)[0]
-        tau_uv = tau_uv_int * line_element * self.wind.RG
+        t_range = np.linspace(0,1)
+        r_range = t_range * r
+        z_range = t_range * z
+        grid_r_range = self.wind.density_grid.grid_r_range
+        grid_z_range = self.wind.density_grid.grid_z_range
+        grid = self.wind.density_grid.grid
+        r_arg = np.searchsorted(grid_r_range, r_range)
+        r_arg[np.where(r_arg == len(grid_r_range))] = len(grid_r_range) - 1
+        z_arg = np.searchsorted(grid_z_range, z_range)
+        z_arg[np.where(z_arg == len(grid_z_range))] = len(grid_z_range) - 1
+        density_values = grid[r_arg, z_arg]
+        line_element = np.sqrt(r**2 + z**2)
+        tau_uv = np.trapz(x=t_range, y=density_values) * const.SIGMA_T * line_element * self.wind.RG
         return tau_uv
-         
+        #gr = self.wind.density_grid
+        #tau_uv_int = integrate.quad(optical_depth_uv_integrand,
+        #                            a=0,
+        #                            b=1,
+        #                            args=(r, z, gr.grid, gr.grid_r_range, gr.grid_z_range),
+        #                            epsabs=0,
+        #                            epsrel=1e-2)[0]
+        #tau_uv = tau_uv_int * line_element * self.wind.RG
+        #return tau_uv
+
         
     def ionization_parameter(self, r, z, tau_x, rho_shielding):
         """
@@ -126,70 +136,8 @@ class Radiation:
         Returns:
             ionization parameter.
         """
-        DENSITY_FLOOR = 1e2
-        if r < self.wind.r_init:
-            rho_shielding = DENSITY_FLOOR
-            tau_x = tau_x / rho_shielding * DENSITY_FLOOR
-        distance_2 = r**2. + z**2.
-        xi = self.xray_luminosity * np.exp(-tau_x) \
-            / (rho_shielding * distance_2 * self.wind.RG**2)
-        assert xi > 0, "Ionization parameter cannot be negative!"
-        xi += 1e-20  # to avoid overflow
+        xi = self.wind.ionization_grid.get_value(r,z)
         return xi
-
-    def ionization_radius_kernel(self, rx):
-        """
-        Auxiliary function to compute ionization radius.
-
-        Args:
-            rx: Candidate for radius where material becomes non ionized.
-
-        Returns:
-            difference between current ion. parameter and target one.
-        """
-        tau_x =  max(min(self.wind.tau_dr_0 * (rx - self.wind.r_init), 50), 0)
-        xi = self.ionization_parameter(rx, 0, tau_x, self.wind.rho_shielding)
-        ionization_difference = const.IONIZATION_PARAMETER_CRITICAL - xi
-        return ionization_difference
-
-    def ionization_radius(self):
-        """
-        Computes the disc radius at which xi = xi_0 using the bisect method.
-        """
-        try:
-            r_x = optimize.root_scalar(
-                self.ionization_radius_kernel,
-                bracket=[self.wind.disk_r_min, self.wind.disk_r_max])
-        except:
-            print("ionization radius outside the disc.")
-            if(self.ionization_radius_kernel(self.wind.disk_r_min) > 0):
-                print("ionization radius is below r_min, nothing is ionized.")
-                r_x = self.wind.disk_r_min
-                return r_x
-            else:
-                print(
-                    "ionization radius is very large, atmosphere is completely ionized.")
-                r_x = self.wind.disk_r_max
-                return r_x
-        assert r_x.converged is True
-        r_x = r_x.root
-        assert r_x > 0, "Got non physical ionization radius!"
-        return r_x
-
-    def opacity_x_r(self, r):
-        """
-        X-Ray opacity factor (respect to just Thomson cross-section).
-
-        Args:
-            r: radius in Rg
-
-        Returns:
-            opacity factor
-        """
-        if (r < self.r_x):
-            return 1
-        else:
-            return 100
 
     def optical_depth_x(self, r, z, r_0, tau_dr, tau_dr_0, rho_shielding):
         """
@@ -206,21 +154,9 @@ class Radiation:
         Returns:
             X-Ray optical depth at the point (r,z)
         """
-        tau_x_0 = max(self.r_x - self.wind.r_init,0)
-        tau_x_0 += max(100 * (r_0 - self.r_x), 0)
-        distance = np.sqrt(r ** 2 + z ** 2)
-        sec_theta = distance / r
-        delta_r = abs(r - r_0)
-        tau_x = sec_theta * (tau_dr_0 * tau_x_0 + tau_dr *
-                             self.opacity_x_r(r) * delta_r)
-        tau_x = min(tau_x, 50)
-        if tau_x < 0:
-            print("warning")
-        tau_x = max(tau_x,0)
-
-        assert tau_x >= 0, "X-Ray optical depth cannot be negative!"
+        tau_x = self.wind.tau_x_grid.get_value(r,z)
         return tau_x
-
+        
     def force_multiplier_k(self, xi):
         """
         Auxiliary function required for computing force multiplier.
@@ -260,7 +196,7 @@ class Radiation:
         assert eta_max >= 0, "Eta Max cannot be negative!"
         return eta_max
 
-    def sobolev_optical_depth(self, tau_dr, dv_dr):
+    def sobolev_optical_depth(self, tau_dr, dv_dr, v_thermal):
         """
         Returns differential optical depth times a factor that compares thermal velocity with spatial velocity gradient.
 
@@ -272,7 +208,7 @@ class Radiation:
         Returns:
             sobolev optical depth.
         """
-        sobolev_length = self.wind.v_thermal / np.abs(dv_dr)
+        sobolev_length = v_thermal / np.abs(dv_dr)
         sobolev_optical_depth = tau_dr * sobolev_length
         assert sobolev_optical_depth >= 0, "Sobolev optical depth cannot be negative!"
         return sobolev_optical_depth
@@ -303,7 +239,25 @@ class Radiation:
         fm = max(0,fm)
         return fm
 
-    def force_radiation(self, r, z, fm, return_error=False, no_tau_z=False, no_tau_uv=False, **kwargs):
+    
+    def compute_equilibrium_temperature(self, n, xi, Tx=1e8):
+        try:
+            root = optimize.root_scalar(cooling_total, args=(n, xi, Tx), bracket=(10, 1e9), method='bisect') 
+        except ValueError:
+        #    print(xi)
+            xi *= 5
+            root = self.compute_equilibrium_temperature(n, xi, Tx)
+            return root
+        assert root.converged
+        return root.root
+
+    def compute_temperature(self, n, R, xi, Tx=1e8):
+        xi = max(xi, 1e-10)
+        eq_temp = self.compute_equilibrium_temperature(n, xi, Tx)
+        disk_temp = self.qsosed.disk_nt_temperature4(R)**(1./4.)
+        return max(disk_temp, eq_temp)
+
+    def force_radiation(self, r, z, fm, tau_uv, return_error=False, no_tau_z=False, no_tau_uv=False, **kwargs):
         """
         Computes the radiation force at the point (r,z)
 
@@ -318,17 +272,14 @@ class Radiation:
         """
         i_aux = self.integrator.integrate(r,
                                           z,
-                                          self.wind.density_grid.grid,
-                                          self.wind.density_grid.grid_r_range,
-                                          self.wind.density_grid.grid_z_range,
                                           self.wind.disk_r_min,
                                           self.wind.disk_r_max,
                                           **kwargs)
-
         error = i_aux[2:4]
         self.int_error_hist.append(error)
         self.int_hist.append(i_aux)
-        constant = (1 + fm) * self.FORCE_RADIATION_CONSTANT
+        abs_uv = np.exp(-tau_uv)
+        constant = abs_uv * (1 + fm) * self.FORCE_RADIATION_CONSTANT
         force = constant  * np.asarray([i_aux[0],
                                         0.,
                                         i_aux[1],

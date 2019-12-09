@@ -7,6 +7,7 @@ from scipy import integrate, interpolate, optimize
 
 import qwind.constants as const
 from qwind.integration import qwind1 as integration 
+from qsosed import sed
 
 
 class Radiation:
@@ -17,6 +18,7 @@ class Radiation:
 
     def __init__(self, wind):
         self.wind = wind
+        self.qsosed = sed.SED(M=self.wind.M / const.M_SUN, mdot=self.wind.mdot)
         self.xray_fraction = self.wind.f_x 
         self.uv_fraction = 1 - self.wind.f_x
         self.dr = (self.wind.lines_r_max - self.wind.lines_r_min) / (self.wind.nr - 1)
@@ -94,6 +96,14 @@ class Radiation:
             print(f"r: {r} \n z : {z} \n r_0 : {r_0}\n tau_dr: {tau_dr} \n tau_dr_0: {tau_dr_0} \n\n")
             raise AssertionError 
         return tau_uv
+
+    def compute_temperature(self, n, R, xi, Tx=1e8):
+        #xi = max(xi, 1e-10)
+        #eq_temp = self.compute_equilibrium_temperature(n, xi, Tx)
+        #disk_temp = self.qsosed.disk_nt_temperature4(R)**(1./4.)
+        #return max(disk_temp, eq_temp)
+        return self.wind.T
+
 
     def ionization_parameter(self, r, z, tau_x, rho_shielding):
         """
@@ -174,7 +184,7 @@ class Radiation:
         else:
             return 100
 
-    def optical_depth_x(self, r, z, r_0, tau_dr, tau_dr_0, rho_shielding):
+    def optical_depth_x(self, r, z, r_0, tau_dr, tau_dr_0, rho_shielding, es_only=False):
         """
         X-Ray optical depth at a distance d.
 
@@ -189,11 +199,21 @@ class Radiation:
         Returns:
             X-Ray optical depth at the point (r,z)
         """
-        tau_x_0 = max(self.r_x - self.wind.r_init,0)
-        tau_x_0 += max(100 * (r_0 - self.r_x), 0)
+        if es_only:
+            delta_r_0 = max(r_0 - self.wind.r_init - self.dr/2.,0)
+            distance = np.sqrt(r ** 2 + z ** 2)
+            sec_theta = distance / r
+            delta_r = abs(r - r_0 - self.dr / 2)
+            tau_x = sec_theta * (tau_dr_0 * delta_r_0 + tau_dr * delta_r)
+            assert tau_x >= 0
+            tau_x = min(tau_x,50)
+            return tau_x
+
+        tau_x_0 = max(self.r_x - self.wind.r_init - self.dr/2.,0)
+        tau_x_0 += max(100 * (r_0 - self.dr/2. - self.r_x), 0)
         distance = np.sqrt(r ** 2 + z ** 2)
         sec_theta = distance / r
-        delta_r = abs(r - r_0)
+        delta_r = abs(r - r_0 - self.dr / 2)
         tau_x = sec_theta * (tau_dr_0 * tau_x_0 + tau_dr *
                              self.opacity_x_r(r) * delta_r)
         tau_x = min(tau_x, 50)
@@ -243,7 +263,7 @@ class Radiation:
         assert eta_max >= 0, "Eta Max cannot be negative!"
         return eta_max
 
-    def sobolev_optical_depth(self, tau_dr, dv_dr):
+    def sobolev_optical_depth(self, tau_dr, dv_dr, v_thermal):
         """
         Returns differential optical depth times a factor that compares thermal velocity with spatial velocity gradient.
 
@@ -255,7 +275,7 @@ class Radiation:
         Returns:
             sobolev optical depth.
         """
-        sobolev_length = self.wind.v_thermal / np.abs(dv_dr)
+        sobolev_length = v_thermal / np.abs(dv_dr)
         sobolev_optical_depth = tau_dr * sobolev_length
         assert sobolev_optical_depth >= 0, "Sobolev optical depth cannot be negative!"
         return sobolev_optical_depth

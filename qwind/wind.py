@@ -2,6 +2,9 @@ import shutil
 import sys
 import importlib
 from multiprocessing import Pool
+from multiprocessing.pool import ThreadPool
+import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
 
 import numpy as np
 import pandas as pd
@@ -84,7 +87,6 @@ class Qwind:
         """
 
         self.n_cpus = n_cpus
-        self.density_grid = grid.Grid()
         #self.grid_r_range = np.linspace(0,2000,50)
         #self.grid_z_range = np.linspace(0,2000,50)
 
@@ -101,6 +103,7 @@ class Qwind:
         self.nr = nr
         self.d_max = d_max
         self.rho_shielding = rho_shielding
+        self.density_grid = grid.DensityGrid(rho_shielding)
 
         if solver == "euler":
             from qwind.streamline.euler import streamline as streamline_solver
@@ -118,24 +121,33 @@ class Qwind:
         self.RG = const.G * self.M / (const.C ** 2)  # gravitational radius
 
         self.bol_luminosity = self.mdot * self.eddington_luminosity
-        self.v_thermal = self.thermal_velocity(T)
+        self.T = T
+        self.v_th = self.thermal_velocity(T)
         self.lines_r_min = lines_r_min
         self.lines_r_max = lines_r_max
         self.f_x = f_x
         # compute initial radii of streamlines
-        dr = (self.lines_r_max - self.lines_r_min) / (nr - 1)
+        self.dr = (self.lines_r_max - self.lines_r_min) / (nr - 1)
         self.lines_r_range = [self.lines_r_min +
-                              (i-0.5) * dr for i in range(1, nr+1)]
+                              (i-0.5) * self.dr for i in range(1, nr+1)]
         self.lines_widths = np.diff(self.lines_r_range)
         self.r_init = self.lines_r_range[0]
 
         # initialize radiation class
         radiation_module_name = "qwind.radiation." + radiation_class
-        print(radiation_module_name)
         radiation_module = importlib.import_module(radiation_module_name)
         self.radiation = radiation_module.Radiation(self)
         
         self.tau_dr_shielding = self.tau_dr(self.rho_shielding)
+        # grids #
+        self.ionization_grid = grid.IonizationParameterGrid(self.radiation.xray_luminosity, self.RG)
+        self.tau_x_grid = grid.OpticalDepthXrayGrid(self.RG)
+
+        if radiation_class != "simple_sed":
+            print("computing tau_x and ionization grid...")
+            for i in range(0,2):
+                self.ionization_grid.update_grid(self.density_grid.grid, self.tau_x_grid.grid)
+                self.tau_x_grid.update_grid(self.density_grid.grid, self.ionization_grid.grid)
 
         print("disk_r_min: %f \n disk_r_max: %f" %
               (self.disk_r_min, self.disk_r_max))
@@ -238,9 +250,13 @@ class Qwind:
         """
         if derive_from_ss:
             #z_0 = self.radiation.sed_class.disk_scale_height(r_0)
-            temperature = self.radiation.sed_class.disk_nt_temperature4(r_0)**(1./4.)
-            v_z_0  = self.thermal_velocity(temperature) * const.C
-            rho_0 = self.radiation.sed_class.disk_number_density(r_0)
+            temperature = self.radiation.qsosed.disk_nt_temperature4(r_0)**(1./4.)
+            v_z_0 = self.thermal_velocity(temperature) * const.C
+            rho_0 = self.radiation.qsosed.disk_number_density(r_0)
+        if v_z_0 == "thermal":
+            temperature = self.radiation.qsosed.disk_nt_temperature4(r_0)**(1./4.)
+            v_z_0 = self.thermal_velocity(temperature) * const.C
+            #T = temperature
         return self.streamline_solver(
             self.radiation,
             wind=self,
@@ -288,15 +304,20 @@ class Qwind:
                                         ))
         i = 0
         if(self.n_cpus == 1):
+            #try:
+            for line in self.lines:
+                i += 1
+                print("Line %d of %d" % (i, len(self.lines)))
+                line.iterate(niter=niter)
+            #except IDAError:
+            #    print("Terminating gracefully...")
+            #    pass
+            self.density_grid.update_grid(self)
             try:
-                for line in self.lines:
-                    i += 1
-                    print("Line %d of %d" % (i, len(self.lines)))
-                    line.iterate(niter=niter)
-                self.density_grid.update_grid(self)
-            except IDAError:
-                print("Terminating gracefully...")
+                self.radiation.integrator.__init__(self.radiation)
+            except:
                 pass
+            
             self.mdot_w, self.kinetic_luminosity, self.angle, self.v_terminal = self.compute_wind_properties()
             return self.lines
         print("multiple cpus")
@@ -308,6 +329,7 @@ class Qwind:
                 evolve, zip(self.lines, niter_array))
         #self.mdot_w = self.compute_wind_mass_loss()
         #self.kinetic_luminosity = self.compute_wind_kinetic_luminosity()
+        self.density_grid.update_grid(self)
         self.mdot_w, self.kinetic_luminosity, self.angle, self.v_terminal = self.compute_wind_properties()
         return self.lines
 
@@ -364,7 +386,12 @@ class Qwind:
         angle_fastest = angles[fastest_line_idx] * 180 / np.pi 
 
         return [mdot_w_total, kinetic_energy_total, angle_fastest, v_fastest]
-
+     
+    def update_all_grids(self):
+        self.density_grid.update_grid(self)
+        self.ionization_grid.update_grid(self.density_grid.grid, self.tau_x_grid.grid)
+        self.tau_x_grid.update_grid(self.density_grid.grid, self.ionization_grid.grid)
+        self.ionization_grid.update_grid(self.density_grid.grid, self.tau_x_grid.grid)
 
 
 if __name__ == '__main__':

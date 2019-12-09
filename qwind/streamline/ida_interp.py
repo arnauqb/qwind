@@ -24,9 +24,10 @@ backend = utils.type_of_script()
 if(backend == 'jupyter'):
     from tqdm import tqdm_notebook as tqdm
 else:
-    tqdm = tqdm_dump
+    #tqdm = tqdm_dump
+    from tqdm import tqdm as tqdm
 
-tqdm = tqdm_dump
+#tqdm = tqdm_dump
 
 class BackToDisk(Exception):
     pass
@@ -64,6 +65,7 @@ class streamline():
             max_steps=10000,
             no_tau_z=False,
             no_tau_uv=False,
+            es_only=False,
     ):
         """
         Args:
@@ -92,6 +94,7 @@ class streamline():
         self.d_max = d_max
         self.no_tau_z = no_tau_z 
         self.no_tau_uv = no_tau_uv
+        self.es_only = es_only
 
         # black hole and disc variables #
         self.T = T  # * u.K
@@ -133,8 +136,8 @@ class streamline():
         self.tau_dr_0 = self.tau_dr
         self.tau_dr_shielding = self.wind.tau_dr(self.wind.rho_shielding)
 
-        #self.tau_uv = self.radiation.optical_depth_uv(
-        #    self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding)
+        self.tau_uv = self.radiation.optical_depth_uv(
+            self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding)
         self.tau_x = self.radiation.optical_depth_x(
             self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding, self.wind.rho_shielding)
 
@@ -144,7 +147,7 @@ class streamline():
             self.r, self.z, self.tau_x, self.wind.rho_shielding)  # self.wind.Xi(self.d, self.z / self.r)
         
         fgrav = self.force_gravity(self.r_0, self.z_0)
-        frad = self.radiation.force_radiation(self.r_0, self.z_0, self.fm, epsabs = self.integral_atol, epsrel = self.integral_rtol)[[0,-1]]
+        frad = self.radiation.force_radiation(self.r_0, self.z_0, self.fm, self.tau_uv, epsabs = self.integral_atol, epsrel = self.integral_rtol)[[0,-1]]
         centrifugal_term = self.l**2 / self.r_0**3
         a_r = fgrav[0] + frad[0] + centrifugal_term
         a_z = fgrav[-1] + frad[-1]
@@ -178,6 +181,7 @@ class streamline():
         self.tau_eff_hist = [self.tau_eff]
         self.fm_hist = [self.fm]
         self.xi_hist = [self.xi]
+        self.T_hist = [self.T]
 
         #force histories #
         self.a_hist = [self.a]
@@ -233,6 +237,7 @@ class streamline():
         v_T = np.sqrt(v_r**2 + v_z**2)
         a_T = np.sqrt(solver.yd[2]**2 + solver.yd[3]**2)
         self.update_radiation(r, z, v_T, a_T, save_hist=True)
+        self.tqdm.update(1)
         if d > self.d_max:
             self.escaped = True
             raise Escape 
@@ -241,8 +246,8 @@ class streamline():
         if r < (self.r_0 - 0.01):
             raise BackToDisk
 
-        #if (z < np.max(self.z_hist)) and (v_z < 0):
-        #    raise BackToDisk
+        if (z < np.max(self.z_hist)) and (v_z < 0):
+            raise BackToDisk
         #print(self.solver.y)
         # stalling
         if self.terminate_stalling:
@@ -284,6 +289,7 @@ class streamline():
         fr = self.radiation.force_radiation(r,
                                             z,
                                             self.fm,
+                                            self.tau_uv,
                                             no_tau_z=self.no_tau_z,
                                             no_tau_uv=self.no_tau_uv,
                                             epsabs = self.integral_atol,
@@ -315,6 +321,7 @@ class streamline():
         solver.verbosity = 50 # 50 = quiet
         solver.maxsteps = self.max_steps
         solver.num_threads = 3
+        
         #solver.display_progress = True
         return solver
 
@@ -329,7 +336,7 @@ class streamline():
         self.v_z_hist.append(v_z)
         v_T = np.sqrt(v_r**2 + v_z**2)
         self.v_T_hist.append(v_T)
-        frad = self.radiation.force_radiation(r,z,self.fm,epsabs=self.integral_atol, epsrel=self.integral_rtol)[[0,-1]]
+        frad = self.radiation.force_radiation(r,z,self.fm, self.tau_uv, epsabs=self.integral_atol, epsrel=self.integral_rtol)[[0,-1]]
         self.fr_hist.append(frad)
         fgrav = self.force_gravity(r,z)
         self.fg_hist.append(fgrav)
@@ -337,6 +344,7 @@ class streamline():
         self.tau_dr_hist.append(self.tau_dr)
         self.tau_eff_hist.append(self.tau_eff)
         self.tau_x_hist.append(self.tau_x)
+        self.T_hist.append(self.T)
         self.xi_hist.append(self.xi)
         self.fm_hist.append(self.fm)
         self.dv_dr_hist.append(self.dv_dr)
@@ -348,16 +356,17 @@ class streamline():
         self.rho = self.update_density(r, z, v_T)
         self.tau_dr = self.wind.tau_dr(self.rho)
         self.dv_dr = a_T / v_T
-        self.tau_eff = self.radiation.sobolev_optical_depth(
-            self.tau_dr, self.dv_dr)
         #if self.tau_eff == np.inf:
         #    self.tau_eff = 1
-        #self.tau_uv = self.radiation.optical_depth_uv(
-        #    r, z, self.r_0, self.tau_dr, self.tau_dr_shielding)
+        self.tau_uv = self.radiation.optical_depth_uv(
+            r, z, self.r_0, self.tau_dr, self.tau_dr_shielding)
         self.tau_x = self.radiation.optical_depth_x(
             r, z, self.r_0, self.tau_dr, self.tau_dr_shielding, self.wind.rho_shielding)
         self.xi = self.radiation.ionization_parameter(
             r, z, self.tau_x, self.rho)
+        self.T = self.radiation.compute_temperature(self.rho, self.r, self.xi)
+        self.v_th = self.wind.thermal_velocity(self.T)
+        self.tau_eff = self.radiation.sobolev_optical_depth(self.tau_dr, self.dv_dr, self.v_th)
         self.fm = self.radiation.force_multiplier(self.tau_eff, self.xi)
         if save_hist:
             self.save_hist()
@@ -369,6 +378,7 @@ class streamline():
         Args:        
             niter : Number of iterations
         """
+        self.tqdm = tqdm(total=10000)
         print(' ', end='', flush=True)
         #y_0 = [self.r_0, self.z_0, self.v_r_0, self.v_z_0]
         #self.y_hist = [y_0]
@@ -395,9 +405,9 @@ class streamline():
         except Stalling:
             print("Line stalled!")
             pass
-        except KeyboardInterrupt:
-            print("Exiting gracefully")
-            pass
+        #except KeyboardInterrupt:
+        #    print("Exiting gracefully")
+        #    pass
 
             #print("Stalled! resetting...")
             #self.solver.finalize()

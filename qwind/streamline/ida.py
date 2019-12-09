@@ -46,7 +46,7 @@ class streamline():
             self,
             radiation_class,
             wind,
-            line_width=20,
+            line_width=20.,
             r_0=375.,
             z_0=10.,
             rho_0=2e8,
@@ -64,6 +64,7 @@ class streamline():
             max_steps=10000,
             no_tau_z=False,
             no_tau_uv=False,
+            es_only=False,
     ):
         """
         Args:
@@ -79,7 +80,7 @@ class streamline():
         """
         self.wind = wind
         self.radiation = radiation_class
-        self.line_width=20,
+        self.line_width=line_width
         if "debug_mode" in self.wind.modes:
             self.streamline_pos = np.loadtxt("streamline.txt")
 
@@ -93,6 +94,7 @@ class streamline():
         self.d_max = d_max
         self.no_tau_z = no_tau_z 
         self.no_tau_uv = no_tau_uv
+        self.es_only = es_only
 
         # black hole and disc variables #
         self.T = T  # * u.K
@@ -140,7 +142,7 @@ class streamline():
         self.tau_uv = self.radiation.optical_depth_uv(
             self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding)
         self.tau_x = self.radiation.optical_depth_x(
-            self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding, self.wind.rho_shielding)
+            self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding, self.wind.rho_shielding, es_only=self.es_only)
 
         self.tau_eff = 0
         self.fm = 0
@@ -176,6 +178,7 @@ class streamline():
         self.v_T_hist = []
         self.dv_hist = []
         self.delta_r_sob_hist = []
+        self.v_th_hist = []
 
         # radiation related histories #
         self.rho_hist = []
@@ -362,26 +365,18 @@ class streamline():
         self.rho = self.update_density(r, z, v_T)
         self.tau_dr = self.wind.tau_dr(self.rho)
         self.dv_dr = a_T / v_T
-        self.tau_eff = self.radiation.sobolev_optical_depth(
-            self.tau_dr, self.dv_dr)
-        #if self.tau_eff == np.inf:
-        #    self.tau_eff = 1
         self.tau_uv = self.radiation.optical_depth_uv(
             r, z, self.r_0, self.tau_dr, self.tau_dr_shielding)
         self.tau_x = self.radiation.optical_depth_x(
-            r, z, self.r_0, self.tau_dr, self.tau_dr_shielding, self.wind.rho_shielding)
+            r, z, self.r_0, self.tau_dr, self.tau_dr_shielding, self.wind.rho_shielding, self.es_only)
         self.xi = self.radiation.ionization_parameter(
             r, z, self.tau_x, self.rho)
+        self.T = self.radiation.compute_temperature(self.rho, self.r, self.xi)
+        self.v_th = self.wind.thermal_velocity(self.T)
+        self.tau_eff = self.radiation.sobolev_optical_depth(self.tau_dr, self.dv_dr, self.v_th)
         self.fm = self.radiation.force_multiplier(self.tau_eff, self.xi)
         if save_hist:
             self.save_hist()
-
-    def generate_interpolation(self, hist):
-        """
-        Creates UnivariateSpline for interpolating results.
-        """
-        us = interpolate.UnivariateSpline(x=self.t_hist, y=hist) 
-        return us
 
     def iterate(self, niter=5000):
         """
@@ -416,12 +411,9 @@ class streamline():
         except Stalling:
             print("Line stalled!")
             pass
-        except KeyboardInterrupt:
-            print("Exiting gracefully")
-            pass
-        self.r_interpolator= self.generate_interpolation(self.r_hist)
-        self.z_interpolator= self.generate_interpolation(self.z_hist)
-        self.rho_interpolator = self.generate_interpolation(self.rho_hist)
+        #except KeyboardInterrupt:
+        #    print("Exiting gracefully")
+        #    pass
 
             #print("Stalled! resetting...")
             #self.solver.finalize()

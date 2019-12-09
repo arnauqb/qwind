@@ -1,6 +1,7 @@
 import numpy as np
 from scipy import integrate
-from numba import jit
+from numba import jit, njit
+from qwind import constants as const
 
 
 @jit(nopython=True)
@@ -9,14 +10,19 @@ def find_index(r,z, grid_r_range, grid_z_range):
     z_idx = np.argmin(np.abs(grid_z_range - z))
     return [r_idx, z_idx]
 
-
-class Grid:
+class DensityGrid:
     
-    def __init__(self, r_i=0, r_f=2000, z_i=1, z_f=1000, n_r=500, n_z=501):
-        self.grid = np.zeros((n_z, n_r)).T
+    def __init__(self, rho_0, r_i=0, r_f=2000, z_i=1, z_f=2000, n_r=500, n_z=501):
+        self.grid = rho_0 * np.ones((n_r, n_z))
         self.grid_r_range = np.linspace(r_i, r_f, n_r)
         self.grid_z_range = np.linspace(z_i, z_f, n_z)
 
+    def get_value(self, r, z):
+        r_arg = np.searchsorted(self.grid_r_range, r, side="left")
+        z_arg = np.searchsorted(self.grid_z_range, z, side="left")
+        r_arg = min(r_arg, self.grid_r_range.shape[0] - 1)
+        z_arg = min(z_arg, self.grid_z_range.shape[0] - 1)
+        return self.grid[r_arg, z_arg]
          
     def get_line_boundaries(self, line, dr):
         """
@@ -99,7 +105,67 @@ class Grid:
         for line in wind.lines:
             self.fill_rho_values(line)
 
+@njit
+def _opacity_xray(xi):
+    if xi < 1e5:
+        return 100 * const.SIGMA_T
+    else:
+        return const.SIGMA_T
 
+@njit
+def optical_depth_x_integrand(t, r, z, density_grid, ionization_grid, grid_r_range, grid_z_range):
+    r = t * r
+    z = t * z
+    r_arg = np.searchsorted(grid_r_range, r, side="left")
+    z_arg = np.searchsorted(grid_z_range, z, side="left")
+    r_arg = min(r_arg, grid_r_range.shape[0] - 1 )
+    z_arg = min(z_arg, grid_z_range.shape[0] - 1)
+    density = density_grid[r_arg, z_arg]
+    xi = ionization_grid[r_arg, z_arg]
+    dtau = _opacity_xray(xi) * density 
+    return dtau
+
+class OpticalDepthXrayGrid:
+    def __init__(self, Rg, r_i=0, r_f=2000, z_i=1, z_f=2000, n_r=500, n_z=501):
+        self.grid = np.zeros((n_r, n_z))
+        self.grid_r_range = np.linspace(r_i, r_f, n_r)
+        self.grid_z_range = np.linspace(z_i, z_f, n_z)
+        self.Rg = Rg
+
+    def update_grid(self, density_grid, ionization_grid):
+        for i, r in enumerate(self.grid_r_range):
+            for j, z in enumerate(self.grid_z_range):
+                line_element = np.sqrt(r**2 + z**2)
+                tau_x = integrate.quad(optical_depth_x_integrand, 0, 1, args=(r,z,density_grid, ionization_grid, self.grid_r_range, self.grid_z_range))[0]
+                self.grid[i,j] = tau_x * line_element * self.Rg
+
+    def get_value(self, r, z):
+        r_arg = np.searchsorted(self.grid_r_range, r, side="left")
+        z_arg = np.searchsorted(self.grid_z_range, z, side="left")
+        r_arg = min(r_arg, self.grid_r_range.shape[0] - 1 )
+        z_arg = min(z_arg, self.grid_z_range.shape[0] - 1)
+        return self.grid[r_arg, z_arg]
+
+class IonizationParameterGrid:
     
+    def __init__(self, xray_luminosity, Rg, r_i=0, r_f=2000, z_i=1, z_f=2000, n_r=500, n_z=501):
+        self.grid = np.zeros((n_r, n_z))
+        self.grid_r_range = np.linspace(r_i, r_f, n_r)
+        self.grid_z_range = np.linspace(z_i, z_f, n_z)
+        self.xray_luminosity = xray_luminosity
+        self.Rg = Rg
     
-    
+    def update_grid(self, density_grid, tau_x_grid):
+        for i, r in enumerate(self.grid_r_range):
+            for j, z in enumerate(self.grid_z_range):
+                density = density_grid[i,j]
+                tau_x = tau_x_grid[i,j]
+                d = np.sqrt(r**2 + z**2) 
+                xi = self.xray_luminosity * np.exp(-tau_x) / (density * d**2 * self.Rg**2)
+                self.grid[i,j] = xi
+    def get_value(self, r, z):
+        r_arg = np.searchsorted(self.grid_r_range, r, side="left")
+        z_arg = np.searchsorted(self.grid_z_range, z, side="left")
+        r_arg = min(r_arg, self.grid_r_range.shape[0] - 1 )
+        z_arg = min(z_arg, self.grid_z_range.shape[0] - 1 )
+        return max(self.grid[r_arg, z_arg], 1e-10)
