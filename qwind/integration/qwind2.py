@@ -6,16 +6,21 @@ import inspect
 
 import numpy as np
 import scipy
-from numba import cfunc, float32, int32, jit, jitclass
+from numba import cfunc, float32, int32, jit, jitclass, njit
 from numba.types import CPointer, float64, intc
 from scipy import LowLevelCallable
 from scipy.integrate import quad
+from qwind import grid
 
 from qwind import constants as const
 RG = 0. 
-grid = np.zeros((500,500)) 
-grid_r_range = np.linspace(0, 2000, 500) 
-grid_z_range = np.linspace(1, 1000, 501)
+mdot_grid = np.zeros(500)
+mdot_grid_r_range = np.linspace(6, 1600, 500)
+DENSITY_GRID = np.zeros((500,500)) 
+#grid_r_range = np.linspace(0, 2000, 500) 
+#grid_z_range = np.linspace(1, 1000, 501)
+GRID_R_RANGE = grid.GRID_R_RANGE
+GRID_Z_RANGE = grid.GRID_Z_RANGE
 
 def jit_integrand(integrand_function):
     """
@@ -64,7 +69,7 @@ def jit_integrand(integrand_function):
 
     return LowLevelCallable(cf(wrapped).ctypes)
 
-@jit(nopython=True)
+@njit
 def nt_rel_factors(r, astar=0, isco=6):
     """
     Relatistic A,B,C factors of the Novikov-Thorne model.
@@ -91,23 +96,43 @@ def nt_rel_factors(r, astar=0, isco=6):
     factor = (A-B)/C
     return factor
 
-@jit(nopython=True)
+def get_density_value(r,z):
+    return_values = np.zeros_like(r)
+    mask = np.where((r >= grid_r_range[-1]) + (r <= grid_r_range[0]) + (z >= grid_z_range[-1]) + (z <= grid_z_range[0]))[0]
+    if mask.size > 0:
+        return_values[mask] = 1e2 #self.density_floor
+        r_arg = np.searchsorted(grid_r_range, r[~mask], side="left")
+        z_arg = np.searchsorted(grid_z_range, z[~mask], side="left")
+        return_values[~mask] = grid[r_arg, z_arg]
+    else:
+        r_arg = np.searchsorted(grid_r_range, r, side="left")
+        z_arg = np.searchsorted(grid_z_range, z, side="left")
+        return_values = grid[r_arg, z_arg]
+    return return_values
+
+@njit
+def get_mdot_value(r_d):
+    rd_arg = np.searchsorted(mdot_grid_r_range, r_d, side="left")
+    return mdot_grid[rd_arg]
+
+@njit
 def optical_depth_uv_integrand(t_range, r_d, phi_d, r, z):
     x = r_d * np.cos(phi_d) + t_range * (r - r_d * np.cos(phi_d))
     y = r_d * np.sin(phi_d) + t_range * (- r_d * np.sin(phi_d))
     z = t_range * z
     r = np.sqrt(x**2 + y**2)
-    r_arg = np.searchsorted(grid_r_range, r, side="left")
-    z_arg = np.searchsorted(grid_z_range, z, side="left")
-    density_values = []
-    for i in range(0,len(r_arg)):
-        dvalue = grid[r_arg[i], z_arg[i]]
-        density_values.append(dvalue)
+    #r_arg = np.searchsorted(grid_r_range, r, side="left")
+    #z_arg = np.searchsorted(grid_z_range, z, side="left")
+    #density_values = []
+    #for i in range(0,len(r_arg)):
+    #    dvalue = grid[r_arg[i], z_arg[i]]
+    #    density_values.append(dvalue)
+    density_values = get_density_value(r,z)
     dtau = const.SIGMA_T * np.array(density_values) #np.array(density_values) 
     return dtau
 
 
-@jit(nopython=True)
+@njit
 def optical_depth_uv(r_d, phi_d, r, z):
     """
     UV optical depth.
@@ -143,10 +168,11 @@ def _integrate_r_kernel(phi_d, r_d, r, z):
     """
     tau_uv = optical_depth_uv(r_d, phi_d, r, z)
     abs_uv = np.exp(-tau_uv)
+    mdot = get_mdot_value(r_d)
     ff0 = nt_rel_factors(r_d) / r_d**2.
     delta = r**2. + r_d**2. + z**2. - 2.*r*r_d * np.cos(phi_d)
     cos_gamma = (r - r_d*np.cos(phi_d)) / delta**2.
-    ff = ff0 * cos_gamma * abs_uv
+    ff = ff0 * cos_gamma * abs_uv * mdot
     return ff
 
 def _integrate_z_kernel(phi_d, r_d, r, z):
@@ -163,11 +189,12 @@ def _integrate_z_kernel(phi_d, r_d, r, z):
         Z integral kernel.
 
     """
+    mdot = get_mdot_value(r_d)
     tau_uv = optical_depth_uv(r_d, phi_d, r, z)
     abs_uv = np.exp(-tau_uv)
     ff0 = nt_rel_factors(r_d) / r_d**2.
     delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
-    ff = ff0 * 1. / delta**2. * abs_uv
+    ff = ff0 * 1. / delta**2. * abs_uv * mdot
     return ff
 
 def _integrate_r_kernel_notau(phi_d, r_d, r, z):
@@ -184,10 +211,11 @@ def _integrate_r_kernel_notau(phi_d, r_d, r, z):
         Radial integral kernel.
 
     """
+    mdot = get_mdot_value(r_d)
     ff0 = nt_rel_factors(r_d) / r_d**2.
     delta = r**2. + r_d**2. + z**2. - 2.*r*r_d * np.cos(phi_d)
     cos_gamma = (r - r_d*np.cos(phi_d)) / delta**2.
-    ff = ff0 * cos_gamma
+    ff = ff0 * cos_gamma * mdot
     return ff
 
 def _integrate_z_kernel_notau(phi_d, r_d, r, z):
@@ -204,9 +232,10 @@ def _integrate_z_kernel_notau(phi_d, r_d, r, z):
         Z integral kernel.
 
     """
+    mdot = get_mdot_value(r_d)
     ff0 = nt_rel_factors(r_d) / r_d**2.
     delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
-    ff = ff0 * 1. / delta**2.
+    ff = ff0 * 1. / delta**2. * mdot
     return ff
 
 
@@ -216,16 +245,20 @@ class Integrator:
         self.radiation = radiation
         global RG
         RG = self.radiation.wind.RG
-        global grid
-        grid = self.radiation.wind.density_grid.grid
-        global grid_r_range
-        grid_r_range = self.radiation.wind.density_grid.grid_r_range
-        global grid_z_range
-        grid_z_range = self.radiation.wind.density_grid.grid_z_range
+        global DENSITY_GRID 
+        DENSITY_GRID = self.radiation.wind.density_grid.grid
+        #global grid_r_range
+        #grid_r_range = self.radiation.wind.density_grid.grid_r_range
+        #global grid_z_range
+        #grid_z_range = self.radiation.wind.density_grid.grid_z_range
+        global mdot_grid
+        mdot_grid = self.radiation.mass_accretion_rate_grid(500)
 
         if notau:
             self._integrate_z = jit_integrand(_integrate_z_kernel_notau)
             self._integrate_r = jit_integrand(_integrate_r_kernel_notau)
+            #self._integrate_z = _integrate_z_kernel_notau
+            #self._integrate_r = _integrate_r_kernel_notau
         else:
             optical_depth_uv_integrand.recompile()
             optical_depth_uv.recompile()

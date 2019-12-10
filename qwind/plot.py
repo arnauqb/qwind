@@ -37,6 +37,8 @@ class Plotter:
         grid=self.wind.density_grid
         fig, ax = plt.subplots()
         cm = ax.pcolormesh(grid.grid_r_range, grid.grid_z_range, grid.grid.T, norm=LogNorm(), cmap=colormaps.matter)
+        #cs = ax.contour(grid.grid_r_range, grid.grid_z_range, grid.grid.T, levels=3)
+        #ax.clabel(cs, inline=1)
         ax.set_xlabel("R [Rg]")
         ax.set_xlabel("z [Rg]")
         plt.colorbar(cm, ax=ax)
@@ -47,17 +49,26 @@ class Plotter:
         fig, ax = plt.subplots()
         cm = ax.pcolormesh(grid.grid_r_range, grid.grid_z_range, grid.grid.T, norm=LogNorm(vmin=1e-5, vmax=1e6), cmap=colormaps.ice)
         plt.colorbar(cm, ax=ax)
+        #cs = ax.contour(grid.grid_r_range, grid.grid_z_range, grid.grid.T, levels=[1e5])
+        #ax.clabel(cs, inline=1)
         ax.set_xlabel("R [Rg]")
         ax.set_xlabel("z [Rg]")
         return fig, ax
 
     def plot_tau_x_grid(self):
-        grid=self.wind.tau_x_grid
+        grid = self.wind.tau_x_grid
         fig, ax = plt.subplots()
-        cm = ax.pcolormesh(grid.grid_r_range, grid.grid_z_range, grid.grid.T, norm=LogNorm(vmin=1e-3, vmax=10), cmap=colormaps.tempo)
+        cm = ax.pcolormesh(grid.grid_r_range, grid.grid_z_range, grid.grid.T, norm=LogNorm(), cmap=colormaps.tempo)
+        #cs = ax.contour(grid.grid_r_range, grid.grid_z_range, grid.grid.T, levels=[1e-2, 1e-1, 1e0, 1e1])
+        #ax.clabel(cs, inline=1)
         plt.colorbar(cm, ax=ax)
         ax.set_xlabel("R [Rg]")
         ax.set_xlabel("z [Rg]")
         return fig, ax
+
+    def plot_all_grids(self):
+        self.plot_density_grid()
+        self.plot_ionization_grid()
+        self.plot_tau_x_grid()
 
 

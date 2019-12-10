@@ -1,10 +1,10 @@
 import shutil
 import sys
 import importlib
-from multiprocessing import Pool
-from multiprocessing.pool import ThreadPool
 import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
+from pathos.multiprocessing import ProcessingPool as Pool 
+from qwind.plot import Plotter
+import pyquad
 
 import numpy as np
 import pandas as pd
@@ -48,6 +48,7 @@ class Qwind:
                  save_dir=None,
                  radiation_class="simple_sed",
                  solver="ida",
+                 iterations = 1,
                  n_cpus=1):
         """
         Parameters
@@ -87,11 +88,10 @@ class Qwind:
         """
 
         self.n_cpus = n_cpus
-        #self.grid_r_range = np.linspace(0,2000,50)
-        #self.grid_z_range = np.linspace(0,2000,50)
 
         # array containing different modes for debugging #
         self.modes = modes
+        self.iterations = iterations
         # black hole and disc variables #
         self.M = M * const.M_SUN
         self.mdot = mdot
@@ -104,6 +104,8 @@ class Qwind:
         self.d_max = d_max
         self.rho_shielding = rho_shielding
         self.density_grid = grid.DensityGrid(rho_shielding)
+        self.escaped_radii = (0,0)
+
 
         if solver == "euler":
             from qwind.streamline.euler import streamline as streamline_solver
@@ -142,16 +144,8 @@ class Qwind:
         # grids #
         self.ionization_grid = grid.IonizationParameterGrid(self.radiation.xray_luminosity, self.RG)
         self.tau_x_grid = grid.OpticalDepthXrayGrid(self.RG)
-
-        if radiation_class != "simple_sed":
-            print("computing tau_x and ionization grid...")
-            for i in range(0,2):
-                self.ionization_grid.update_grid(self.density_grid.grid, self.tau_x_grid.grid)
-                self.tau_x_grid.update_grid(self.density_grid.grid, self.ionization_grid.grid)
-
-        print("disk_r_min: %f \n disk_r_max: %f" %
-              (self.disk_r_min, self.disk_r_max))
-
+        self.update_all_grids(init=True)
+        
         # create directory if it doesnt exist. Warning, this overwrites previous outputs.
         if save_dir is not None:
             self.save_dir = save_dir
@@ -164,6 +158,8 @@ class Qwind:
         self.lines = []  # list of streamline objects
         self.lines_hist = []  # save all iterations info
                 #integration.grid = self.density_grid
+
+        self.plotter = Plotter(self)
 
     def v_kepler(self, r):
         """
@@ -290,47 +286,56 @@ class Qwind:
         niter : int 
             Number of timesteps.
         """
-        print("Starting line iteration")
-        self.lines = []
-        for i, r in enumerate(self.lines_r_range[:-1]):
-            self.lines.append(self.line(r_0=r,
-                                        line_width = self.lines_widths[i],
-                                        derive_from_ss=derive_from_ss,
-                                        v_z_0=v_z_0,
-                                        rho_0=rho_0,
-                                        z_0=z_0,
-                                        dt = dt,
-                                        **kwargs,
-                                        ))
-        i = 0
-        if(self.n_cpus == 1):
-            #try:
-            for line in self.lines:
-                i += 1
-                print("Line %d of %d" % (i, len(self.lines)))
+        for i in range(0, self.iterations):
+            print(f"Iteration {i+1} of {self.iterations}")
+            self.lines = []
+            for i, r in enumerate(self.lines_r_range[:-1]):
+                self.lines.append(self.line(r_0=r,
+                                            line_width = self.lines_widths[i],
+                                            derive_from_ss=derive_from_ss,
+                                            v_z_0=v_z_0,
+                                            rho_0=rho_0,
+                                            z_0=z_0,
+                                            dt = dt,
+                                            **kwargs,
+                                            ))
+            for i, line in enumerate(self.lines):
+                print(f"Line {i+1} of {len(self.lines)}")
                 line.iterate(niter=niter)
-            #except IDAError:
-            #    print("Terminating gracefully...")
-            #    pass
-            self.density_grid.update_grid(self)
-            try:
-                self.radiation.integrator.__init__(self.radiation)
-            except:
-                pass
-            
-            self.mdot_w, self.kinetic_luminosity, self.angle, self.v_terminal = self.compute_wind_properties()
-            return self.lines
-        print("multiple cpus")
-        niter_array = niter * np.ones(len(self.lines))
-        niter_array = niter_array.astype('int')
+                #except IDAError:
+                #    print("Terminating gracefully...")
+                #    pass
+                try:
+                    self.radiation.integrator.__init__(self.radiation)
+                except:
+                    pass
+             
+            self.update_all_grids()
+            self.plotter.plot_wind()
+            self.plotter.plot_all_grids()
+            plt.show()
+            #print("multiple cpus")
+            #niter_array = niter * np.ones(len(self.lines))
+            #niter_array = niter_array.astype('int')
 
-        with Pool(self.n_cpus) as multiprocessing_pool:
-            self.lines = multiprocessing_pool.starmap(
-                evolve, zip(self.lines, niter_array))
-        #self.mdot_w = self.compute_wind_mass_loss()
-        #self.kinetic_luminosity = self.compute_wind_kinetic_luminosity()
-        self.density_grid.update_grid(self)
-        self.mdot_w, self.kinetic_luminosity, self.angle, self.v_terminal = self.compute_wind_properties()
+            #with Pool(self.n_cpus) as multiprocessing_pool:
+            #    #self.lines = multiprocessing_pool.starmap(
+            #    #    evolve, zip(self.lines, niter_array))
+            #    self.lines = multiprocessing_pool.map(self.lines, niter_array)
+            #self.mdot_w = self.compute_wind_mass_loss()
+            #self.kinetic_luminosity = self.compute_wind_kinetic_luminosity()
+            self.mdot_w, self.kinetic_luminosity, self.angle, self.v_terminal = self.compute_wind_properties()
+            lines_escaped = np.array(self.lines)[np.where(line.escaped for line in self.lines)[0]]
+            if len(lines_escaped) == 0:
+                self.escaped_radii = (0,0)
+            else:
+                self.escaped_radii = (lines_escaped[0].r_0 - lines_escaped[0].line_width / 2.,
+                                      lines_escaped[-1].r_0 + lines_escaped[-1].line_width / 2.)
+
+            plt.plot(np.linspace(self.disk_r_min, self.disk_r_max, 500), self.radiation.mass_accretion_rate_grid(500))
+            plt.show()
+
+
         return self.lines
 
     def compute_line_mass_loss(self, line):
@@ -387,11 +392,17 @@ class Qwind:
 
         return [mdot_w_total, kinetic_energy_total, angle_fastest, v_fastest]
      
-    def update_all_grids(self):
-        self.density_grid.update_grid(self)
-        self.ionization_grid.update_grid(self.density_grid.grid, self.tau_x_grid.grid)
-        self.tau_x_grid.update_grid(self.density_grid.grid, self.ionization_grid.grid)
-        self.ionization_grid.update_grid(self.density_grid.grid, self.tau_x_grid.grid)
+    def update_all_grids(self, init=False):
+
+        print("updating grids...")
+        if not init:
+            self.density_grid.update_grid(self)
+        self.ionization_grid.update_grid(self.density_grid, self.tau_x_grid)
+        self.tau_x_grid.update_grid(self.density_grid, self.ionization_grid)
+        print("...")
+        self.ionization_grid.update_grid(self.density_grid, self.tau_x_grid)
+        self.tau_x_grid.update_grid(self.density_grid, self.ionization_grid)
+        self.ionization_grid.update_grid(self.density_grid, self.tau_x_grid)
 
 
 if __name__ == '__main__':

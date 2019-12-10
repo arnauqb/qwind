@@ -7,6 +7,7 @@ from scipy import integrate, interpolate, optimize
 from qwind.integration import qwind2 as integration 
 from numba import njit
 from qsosed import sed
+from qwind import grid
 
 import qwind.constants as const
 
@@ -28,6 +29,7 @@ def cooling_total(T, n, xi, Tx=1e8):
     return total
 
 
+
 class Radiation:
     """
     This class handles all the calculations involving the radiation field, i.e., radiative opacities, optical depths, radiation force, etc.
@@ -36,6 +38,7 @@ class Radiation:
 
     def __init__(self, wind):
         self.wind = wind
+        self.mdot_0 = wind.mdot
         self.qsosed = sed.SED(self.wind.M / const.M_SUN, self.wind.mdot)
         self.xray_fraction = self.wind.f_x 
         self.uv_fraction = 1 - self.wind.f_x
@@ -43,7 +46,7 @@ class Radiation:
         self.wind.tau_dr_0 = self.wind.tau_dr(self.wind.rho_shielding)
         self.xray_luminosity = self.wind.mdot * \
             self.wind.eddington_luminosity * self.xray_fraction
-        self.FORCE_RADIATION_CONSTANT = 3. * self.wind.mdot / \
+        self.FORCE_RADIATION_CONSTANT = 3. / \
             (8. * np.pi * self.wind.eta) * self.uv_fraction
         self.int_hist = []
         self.int_error_hist = []
@@ -86,6 +89,32 @@ class Radiation:
                 ETAMAX_INTERP_ETAMAX_VALUES[-1]),
             kind='cubic')  # important! xi is log here
 
+    def mass_accretion_rate_grid(self, N):
+        """
+        Returns mass accretion rate at radius r, taking into account the escaped wind.
+        """
+        mdot_list = []
+        r_range = np.linspace(self.wind.disk_r_min, self.wind.disk_r_max, N) 
+        for r in r_range:
+            if r > self.wind.escaped_radii[0] and r < self.wind.escaped_radii[-1]:
+                mdot_wind = self.wind.mdot_w * self.wind.eta * const.C**2 / self.qsosed.eddington_luminosity 
+                mdot = self.mdot_0 - mdot_wind 
+            else:
+                mdot = self.mdot_0
+            mdot_list.append(mdot)
+        return np.array(mdot_list)
+
+    def optical_depth_uv_integrand(self, t, r, z, grid_r_range, grid_z_range, density_grid):
+        r = t * r
+        z = t * z
+        r_arg = np.searchsorted(grid_r_range, r, side="left")
+        z_arg = np.searchsorted(grid_z_range, z, side="left")
+        r_arg = min(r_arg, grid_r_range.shape[0] - 1)
+        z_arg = min(z_arg, grid_z_range.shape[0] - 1)
+        density = density_grid[r_arg, z_arg]
+        return density 
+
+        
     def optical_depth_uv(self,r, z, r_0, tau_dr, tau_dr_shielding):
         """
         UV optical depth.
@@ -97,27 +126,29 @@ class Radiation:
         Returns:
             UV optical depth at point (r,z) 
         """
-        t_range = np.linspace(0,1)
-        r_range = t_range * r
-        z_range = t_range * z
-        grid_r_range = self.wind.density_grid.grid_r_range
-        grid_z_range = self.wind.density_grid.grid_z_range
-        grid = self.wind.density_grid.grid
-        r_arg = np.searchsorted(grid_r_range, r_range)
-        r_arg[np.where(r_arg == len(grid_r_range))] = len(grid_r_range) - 1
-        z_arg = np.searchsorted(grid_z_range, z_range)
-        z_arg[np.where(z_arg == len(grid_z_range))] = len(grid_z_range) - 1
-        density_values = grid[r_arg, z_arg]
-        line_element = np.sqrt(r**2 + z**2)
-        tau_uv = np.trapz(x=t_range, y=density_values) * const.SIGMA_T * line_element * self.wind.RG
-        return tau_uv
+        #t_range = np.linspace(0,1)
+        #r_range = t_range * r
+        #z_range = t_range * z
+        grid_r_range = grid.GRID_R_RANGE 
+        grid_z_range = grid.GRID_Z_RANGE 
+        density_grid = grid.DENSITY_GRID 
+        #r_arg = np.searchsorted(grid_r_range, r_range)
+        #r_arg[np.where(r_arg == len(grid_r_range))] = len(grid_r_range) - 1
+        #z_arg = np.searchsorted(grid_z_range, z_range)
+        #z_arg[np.where(z_arg == len(grid_z_range))] = len(grid_z_range) - 1
+        #density_values = grid[r_arg, z_arg]
+        #density_values = self.wind.density_grid.get_value(r_range, z_range)
+        line_element = np.sqrt(r**2 + z**2) * self.wind.RG * const.SIGMA_T
+        #tau_uv = np.trapz(x=t_range, y=density_values) * const.SIGMA_T * line_element * self.wind.RG
+        #return tau_uv
         #gr = self.wind.density_grid
-        #tau_uv_int = integrate.quad(optical_depth_uv_integrand,
-        #                            a=0,
-        #                            b=1,
-        #                            args=(r, z, gr.grid, gr.grid_r_range, gr.grid_z_range),
-        #                            epsabs=0,
-        #                            epsrel=1e-2)[0]
+        tau_uv_int = integrate.quad(self.optical_depth_uv_integrand,
+                                    a=0,
+                                    b=1,
+                                    args=(r, z, grid_r_range, grid_z_range, density_grid),
+                                    epsabs=0,
+                                    epsrel=1e-2)[0]
+        return tau_uv_int * line_element
         #tau_uv = tau_uv_int * line_element * self.wind.RG
         #return tau_uv
 

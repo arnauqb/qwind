@@ -2,7 +2,22 @@ import numpy as np
 from scipy import integrate
 from numba import jit, njit
 from qwind import constants as const
+import pyquad
+import sys, inspect
+import matplotlib.pyplot as plt
 
+N_R_DEFAULT = 1000
+N_Z_DEFAULT = 1001
+R_MAX_DEFAULT = 2000
+Z_MAX_DEFAULT = 2000 
+GRID_R_RANGE = np.geomspace(1, R_MAX_DEFAULT, N_R_DEFAULT)
+GRID_Z_RANGE = np.geomspace(1, Z_MAX_DEFAULT, N_Z_DEFAULT) 
+DENSITY_GRID = 2e8 * np.ones((N_R_DEFAULT,N_Z_DEFAULT))
+IONIZATION_GRID = 1e3 * np.ones((N_R_DEFAULT, N_Z_DEFAULT))
+#taux_grid_r_range = np.linspace(0, R_MAX_DEFAULT, N_R_DEFAULT)
+#taux_grid_z_range= np.linspace(0, Z_MAX_DEFAULT, N_Z_DEFAULT)
+#taux_density_grid = 2e8 * np.ones((N_R_DEFAULT,N_Z_DEFAULT))
+#taux_ionization_grid = 1e3 * np.ones((N_R_DEFAULT, N_Z_DEFAULT))
 
 @jit(nopython=True)
 def find_index(r,z, grid_r_range, grid_z_range):
@@ -10,20 +25,38 @@ def find_index(r,z, grid_r_range, grid_z_range):
     z_idx = np.argmin(np.abs(grid_z_range - z))
     return [r_idx, z_idx]
 
-class DensityGrid:
-    
-    def __init__(self, rho_0, r_i=0, r_f=2000, z_i=1, z_f=2000, n_r=500, n_z=501):
-        self.grid = rho_0 * np.ones((n_r, n_z))
-        self.grid_r_range = np.linspace(r_i, r_f, n_r)
-        self.grid_z_range = np.linspace(z_i, z_f, n_z)
+class Grid:
+    """
+    General grid class
+    """
+    def __init__(self, initial_value):
+        self.grid = initial_value * np.ones((N_R_DEFAULT, N_Z_DEFAULT))
 
-    def get_value(self, r, z):
-        r_arg = np.searchsorted(self.grid_r_range, r, side="left")
-        z_arg = np.searchsorted(self.grid_z_range, z, side="left")
-        r_arg = min(r_arg, self.grid_r_range.shape[0] - 1)
-        z_arg = min(z_arg, self.grid_z_range.shape[0] - 1)
-        return self.grid[r_arg, z_arg]
-         
+    def get_value(self, r,z):
+        r = np.array(r, ndmin=1)
+        z = np.array(z, ndmin=1)
+        return_values = np.zeros_like(r)
+        mask1 = (r >= GRID_R_RANGE[-1]) # + (z >= GRID_Z_RANGE[-1])
+        mask2 = (z >= GRID_Z_RANGE[-1])
+        mask3 = mask1 * mask2
+        mask_total = mask1 + mask2
+        r_arg = np.searchsorted(GRID_R_RANGE, r, side="right")
+        z_arg = np.searchsorted(GRID_Z_RANGE, z, side="right")
+        if mask1.size > 0:
+            return_values[mask1] = self.grid[-1 * np.ones_like(mask1), z_arg[mask1]] 
+        if mask2.size > 0:
+            return_values[mask2] = self.grid[r_arg[mask2], -1*np.ones_like(mask2)] 
+        if mask3.size > 0:
+            return_values[mask3] = self.grid[-1,-1]
+        return_values[~mask_total] = self.grid[r_arg[~mask_total], z_arg[~mask_total]]
+        return return_values
+
+
+class DensityGrid(Grid):
+    
+    def __init__(self, rho_0):
+        super().__init__(rho_0)
+            
     def get_line_boundaries(self, line, dr):
         """
         Given line computes the width of the line for all its range.
@@ -70,7 +103,7 @@ class DensityGrid:
             for i,rectangle in enumerate(rectangles):
                 rectangle_idx = []
                 for vertex in rectangle:
-                    r_arg, z_arg = find_index(vertex[0], vertex[1], self.grid_r_range, self.grid_z_range)
+                    r_arg, z_arg = find_index(vertex[0], vertex[1], GRID_R_RANGE, GRID_Z_RANGE)
                     rectangle_idx.append([r_arg, z_arg])
                 rectangle_idx = np.array(rectangle_idx)
                 #rec_un, counts = rec_unique = np.unique(rectangle_idx, return_counts=True, axis = 0)
@@ -93,13 +126,13 @@ class DensityGrid:
             rectangle = self.get_line_boundaries(line, dr)
             rectangle_idx = []
             for vertex in rectangle:
-                r_arg, z_arg = find_index(vertex[0], vertex[1], self.grid_r_range, self.grid_z_range)
+                r_arg, z_arg = find_index(vertex[0], vertex[1], GRID_R_RANGE, GRID_Z_RANGE)
                 rectangle_idx.append([r_arg, z_arg])
             r1, r2, r3, r4 = rectangle_idx
-            rec_un, counts = rec_unique = np.unique(rectangle_idx, return_counts=True, axis=-1)
+            #rec_un, counts = rec_unique = np.unique(rectangle_idx, return_counts=True, axis=-1)
             assert (r2[1] >= r4[1])
             assert (r1[0] <= r3[0])
-            self.grid[r1[0]:r3[0], r4[1]:r2[1]] = line.rho_0
+            self.grid[r1[0]:r3[0]+1, r4[1]:r2[1]+1] = line.rho_0
 
     def update_grid(self, wind):
         for line in wind.lines:
@@ -107,65 +140,59 @@ class DensityGrid:
 
 @njit
 def _opacity_xray(xi):
+    #xi = np.array(xi)
+    #return_values = const.SIGMA_T * np.ones_like(xi)
+    #mask = xi < 1e5
+    #return_values[mask] *= 100
+    #return return_values
     if xi < 1e5:
         return 100 * const.SIGMA_T
     else:
         return const.SIGMA_T
 
-@njit
-def optical_depth_x_integrand(t, r, z, density_grid, ionization_grid, grid_r_range, grid_z_range):
+
+def optical_depth_x_integrand(t, r, z):#, density_grid, ionization_grid, grid_r_range, grid_z_range):
     r = t * r
     z = t * z
-    r_arg = np.searchsorted(grid_r_range, r, side="left")
-    z_arg = np.searchsorted(grid_z_range, z, side="left")
-    r_arg = min(r_arg, grid_r_range.shape[0] - 1 )
-    z_arg = min(z_arg, grid_z_range.shape[0] - 1)
-    density = density_grid[r_arg, z_arg]
-    xi = ionization_grid[r_arg, z_arg]
-    dtau = _opacity_xray(xi) * density 
+    r_arg = np.searchsorted(GRID_R_RANGE, r, side="left")
+    z_arg = np.searchsorted(GRID_Z_RANGE, z, side="left")
+    r_arg = min(r_arg, GRID_R_RANGE.shape[0] - 1)
+    z_arg = min(z_arg, GRID_Z_RANGE.shape[0] - 1)
+    line_element = np.sqrt(r**2 + z**2)
+    density = DENSITY_GRID[r_arg, z_arg]
+    xi = IONIZATION_GRID[r_arg, z_arg]
+    dtau = _opacity_xray(xi) * density * line_element
+    #dtau = density * line_element 
     return dtau
 
-class OpticalDepthXrayGrid:
-    def __init__(self, Rg, r_i=0, r_f=2000, z_i=1, z_f=2000, n_r=500, n_z=501):
-        self.grid = np.zeros((n_r, n_z))
-        self.grid_r_range = np.linspace(r_i, r_f, n_r)
-        self.grid_z_range = np.linspace(z_i, z_f, n_z)
+
+class OpticalDepthXrayGrid(Grid):
+    def __init__(self, Rg, initial_value = 0):
+        super().__init__(initial_value)
+        rr, zz = np.meshgrid(GRID_R_RANGE, GRID_Z_RANGE)
+        self.rz_grid = np.array([rr.flatten(), zz.flatten()]).T
         self.Rg = Rg
 
     def update_grid(self, density_grid, ionization_grid):
-        for i, r in enumerate(self.grid_r_range):
-            for j, z in enumerate(self.grid_z_range):
-                line_element = np.sqrt(r**2 + z**2)
-                tau_x = integrate.quad(optical_depth_x_integrand, 0, 1, args=(r,z,density_grid, ionization_grid, self.grid_r_range, self.grid_z_range))[0]
-                self.grid[i,j] = tau_x * line_element * self.Rg
-
-    def get_value(self, r, z):
-        r_arg = np.searchsorted(self.grid_r_range, r, side="left")
-        z_arg = np.searchsorted(self.grid_z_range, z, side="left")
-        r_arg = min(r_arg, self.grid_r_range.shape[0] - 1 )
-        z_arg = min(z_arg, self.grid_z_range.shape[0] - 1)
-        return self.grid[r_arg, z_arg]
-
-class IonizationParameterGrid:
+        global DENSITY_GRID 
+        DENSITY_GRID = density_grid.grid.copy()
+        global IONIZATION_GRID 
+        IONIZATION_GRID = ionization_grid.grid.copy()
+        res, error = pyquad.quad_grid(optical_depth_x_integrand, 0, 1, self.rz_grid, parallel=True, cache=False)
+        res= res.reshape(len(GRID_Z_RANGE), len(GRID_R_RANGE)).T * self.Rg
+        self.grid = res
+        
+class IonizationParameterGrid(Grid):
     
-    def __init__(self, xray_luminosity, Rg, r_i=0, r_f=2000, z_i=1, z_f=2000, n_r=500, n_z=501):
-        self.grid = np.zeros((n_r, n_z))
-        self.grid_r_range = np.linspace(r_i, r_f, n_r)
-        self.grid_z_range = np.linspace(z_i, z_f, n_z)
+    def __init__(self, xray_luminosity, Rg, initial_value = 1):
+        super().__init__(initial_value)
         self.xray_luminosity = xray_luminosity
+        rr, zz = np.meshgrid(GRID_R_RANGE, GRID_Z_RANGE)
+        rz_grid = np.array([rr.flatten(), zz.flatten()]).T
         self.Rg = Rg
+        self.d2_grid = (rz_grid[:,0]**2 + rz_grid[:,1]**2).reshape(N_Z_DEFAULT, N_R_DEFAULT).T * self.Rg**2
     
     def update_grid(self, density_grid, tau_x_grid):
-        for i, r in enumerate(self.grid_r_range):
-            for j, z in enumerate(self.grid_z_range):
-                density = density_grid[i,j]
-                tau_x = tau_x_grid[i,j]
-                d = np.sqrt(r**2 + z**2) 
-                xi = self.xray_luminosity * np.exp(-tau_x) / (density * d**2 * self.Rg**2)
-                self.grid[i,j] = xi
-    def get_value(self, r, z):
-        r_arg = np.searchsorted(self.grid_r_range, r, side="left")
-        z_arg = np.searchsorted(self.grid_z_range, z, side="left")
-        r_arg = min(r_arg, self.grid_r_range.shape[0] - 1 )
-        z_arg = min(z_arg, self.grid_z_range.shape[0] - 1 )
-        return max(self.grid[r_arg, z_arg], 1e-10)
+        xi = self.xray_luminosity * np.exp(-tau_x_grid.grid) / (density_grid.grid * self.d2_grid) 
+        self.grid = xi + 1e-11
+
