@@ -4,7 +4,6 @@ This module handles the radiation transfer aspects of Qwind.
 
 import numpy as np
 from scipy import integrate, interpolate, optimize
-
 import qwind.constants as const
 from qwind.integration import qwind1 as integration 
 from qsosed import sed
@@ -26,7 +25,7 @@ class Radiation:
         self.xray_luminosity = self.wind.mdot * \
             self.wind.eddington_luminosity * self.xray_fraction
         self.r_x = self.ionization_radius()
-        self.FORCE_RADIATION_CONSTANT = 3. * self.wind.mdot / \
+        self.FORCE_RADIATION_CONSTANT = 3. / \
             (8. * np.pi * self.wind.eta) * self.uv_fraction
         self.int_hist = []
         self.int_error_hist = []
@@ -105,7 +104,7 @@ class Radiation:
         return self.wind.T
 
 
-    def ionization_parameter(self, r, z, tau_x, rho_shielding):
+    def ionization_parameter(self, r, z, tau_x, rho):
         """
         Computes Ionization parameter.
 
@@ -121,11 +120,11 @@ class Radiation:
         """
         DENSITY_FLOOR = 1e2
         if r < self.wind.r_init:
-            rho_shielding = DENSITY_FLOOR
-            tau_x = tau_x / rho_shielding * DENSITY_FLOOR
+            rho = DENSITY_FLOOR
+            tau_x = tau_x / rho * DENSITY_FLOOR
         distance_2 = r**2. + z**2.
         xi = self.xray_luminosity * np.exp(-tau_x) \
-            / (rho_shielding * distance_2 * self.wind.RG**2)
+            / (rho * distance_2 * self.wind.RG**2)
         assert xi > 0, "Ionization parameter cannot be negative!"
         xi += 1e-20  # to avoid overflow
         return xi
@@ -305,6 +304,9 @@ class Radiation:
         #assert fm >= 0, "Force multiplier cannot be negative!"
         fm = max(0,fm)
         return fm
+
+    def update_all_grids(self):
+        pass
 
     def force_radiation(self, r, z, fm, tau_uv, return_error=False, no_tau_z=False, no_tau_uv=False, **kwargs):
         """

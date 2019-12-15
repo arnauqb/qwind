@@ -147,7 +147,7 @@ class streamline():
         self.tau_eff = 0
         self.fm = 0
         self.xi = self.radiation.ionization_parameter(
-            self.r, self.z, self.tau_x, self.wind.rho_shielding)  # self.wind.Xi(self.d, self.z / self.r)
+            self.r, self.z, self.tau_x, self.rho_0)  # self.wind.Xi(self.d, self.z / self.r)
         
         fgrav = self.force_gravity(self.r_0, self.z_0)
         frad = self.radiation.force_radiation(self.r_0, self.z_0, self.fm, self.tau_uv, epsabs = self.integral_atol, epsrel = self.integral_rtol)[[0,-1]]

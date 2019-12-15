@@ -1,8 +1,7 @@
 import shutil
-import sys
+import sys, os
 import importlib
 import matplotlib.pyplot as plt
-from pathos.multiprocessing import ProcessingPool as Pool 
 from qwind.plot import Plotter
 import pyquad
 
@@ -49,6 +48,7 @@ class Qwind:
                  radiation_class="simple_sed",
                  solver="ida",
                  iterations = 1,
+                 refresh_grids = True,
                  n_cpus=1):
         """
         Parameters
@@ -100,7 +100,7 @@ class Qwind:
         self.disk_r_min = disk_r_min
         self.disk_r_max = disk_r_max
         self.eta = eta
-        self.nr = nr
+        self.nr = nr + 1 # nr denotes the borders between lines, so...
         self.d_max = d_max
         self.rho_shielding = rho_shielding
         self.density_grid = grid.DensityGrid(rho_shielding)
@@ -121,7 +121,6 @@ class Qwind:
         self.streamline_solver = streamline_solver
 
         self.RG = const.G * self.M / (const.C ** 2)  # gravitational radius
-
         self.bol_luminosity = self.mdot * self.eddington_luminosity
         self.T = T
         self.v_th = self.thermal_velocity(T)
@@ -129,23 +128,21 @@ class Qwind:
         self.lines_r_max = lines_r_max
         self.f_x = f_x
         # compute initial radii of streamlines
-        self.dr = (self.lines_r_max - self.lines_r_min) / (nr - 1)
+        self.dr = (self.lines_r_max - self.lines_r_min) / (self.nr - 1)
         self.lines_r_range = [self.lines_r_min +
-                              (i-0.5) * self.dr for i in range(1, nr+1)]
+                              (i-0.5) * self.dr for i in range(1, self.nr+1)]
         self.lines_widths = np.diff(self.lines_r_range)
         self.r_init = self.lines_r_range[0]
 
         # initialize radiation class
+        self.radiation_class = radiation_class
         radiation_module_name = "qwind.radiation." + radiation_class
         radiation_module = importlib.import_module(radiation_module_name)
         self.radiation = radiation_module.Radiation(self)
         
         self.tau_dr_shielding = self.tau_dr(self.rho_shielding)
-        # grids #
-        self.ionization_grid = grid.IonizationParameterGrid(self.radiation.xray_luminosity, self.RG)
-        self.tau_x_grid = grid.OpticalDepthXrayGrid(self.RG)
-        self.update_all_grids(init=True)
-        
+
+                
         # create directory if it doesnt exist. Warning, this overwrites previous outputs.
         if save_dir is not None:
             self.save_dir = save_dir
@@ -160,6 +157,8 @@ class Qwind:
                 #integration.grid = self.density_grid
 
         self.plotter = Plotter(self)
+        #if radiation_class == "qsosed":
+        #    self.plotter.plot_all_grids()
 
     def v_kepler(self, r):
         """
@@ -273,6 +272,7 @@ class Qwind:
                     rho_0=2e8,
                     z_0=1,
                     dt=4.096/10,
+                    show_plots=True,
                     **kwargs):
         """
         Starts and evolves a set of equally spaced streamlines.
@@ -305,47 +305,28 @@ class Qwind:
                 #except IDAError:
                 #    print("Terminating gracefully...")
                 #    pass
-                try:
-                    self.radiation.integrator.__init__(self.radiation)
-                except:
-                    pass
-             
-            self.update_all_grids()
-            self.plotter.plot_wind()
-            self.plotter.plot_all_grids()
-            plt.show()
-            #print("multiple cpus")
-            #niter_array = niter * np.ones(len(self.lines))
-            #niter_array = niter_array.astype('int')
+                if self.radiation_class == "qsosed": 
+                    self.radiation.update_all_grids()
+                    if show_plots:
+                        self.plotter.plot_all_grids()
+                        plt.show()
 
-            #with Pool(self.n_cpus) as multiprocessing_pool:
-            #    #self.lines = multiprocessing_pool.starmap(
-            #    #    evolve, zip(self.lines, niter_array))
-            #    self.lines = multiprocessing_pool.map(self.lines, niter_array)
-            #self.mdot_w = self.compute_wind_mass_loss()
-            #self.kinetic_luminosity = self.compute_wind_kinetic_luminosity()
             self.mdot_w, self.kinetic_luminosity, self.angle, self.v_terminal = self.compute_wind_properties()
-            lines_escaped = np.array(self.lines)[np.where(line.escaped for line in self.lines)[0]]
-            if len(lines_escaped) == 0:
-                self.escaped_radii = (0,0)
-            else:
-                self.escaped_radii = (lines_escaped[0].r_0 - lines_escaped[0].line_width / 2.,
-                                      lines_escaped[-1].r_0 + lines_escaped[-1].line_width / 2.)
-
-            plt.plot(np.linspace(self.disk_r_min, self.disk_r_max, 500), self.radiation.mass_accretion_rate_grid(500))
+            self.radiation.compute_mass_accretion_rate_grid(self.lines)
+            plt.plot(self.radiation.mdot_grid_range, self.radiation.mdot_grid)
             plt.show()
-
-
+            if self.radiation_class == "qsosed":
+                self.radiation.initialize_all_grids()
         return self.lines
 
     def compute_line_mass_loss(self, line):
         """
         Computes wind mass loss rate after evolving the streamlines.
         """
-        dR = self.lines_r_range[1] - self.lines_r_range[0]
         mdot_w_total = 0
-        area = 2 * np.pi * ((line.r_0 + dR/2.)**2. -
-                            (line.r_0 - dR/2.)**2) * self.RG**2.
+        width = line.width
+        area = 2 * np.pi * ((line.r_0 + width/2.)**2. -
+                            (line.r_0 - width/2.)**2) * self.RG**2.
         mdot_w = line.rho_0 * const.M_P * line.v_T_0 * const.C * area
         return mdot_w
     
@@ -392,18 +373,7 @@ class Qwind:
 
         return [mdot_w_total, kinetic_energy_total, angle_fastest, v_fastest]
      
-    def update_all_grids(self, init=False):
-
-        print("updating grids...")
-        if not init:
-            self.density_grid.update_grid(self)
-        self.ionization_grid.update_grid(self.density_grid, self.tau_x_grid)
-        self.tau_x_grid.update_grid(self.density_grid, self.ionization_grid)
-        print("...")
-        self.ionization_grid.update_grid(self.density_grid, self.tau_x_grid)
-        self.tau_x_grid.update_grid(self.density_grid, self.ionization_grid)
-        self.ionization_grid.update_grid(self.density_grid, self.tau_x_grid)
-
+    
 
 if __name__ == '__main__':
     qwind = Qwind(M=1e8, mdot=0.1, rho_shielding=2e8,  n_cpus=4, nr=4)

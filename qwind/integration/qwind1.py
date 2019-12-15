@@ -211,7 +211,7 @@ def _integrate_dblquad_kernel_z_jitted_rel(phi_d, r_d, r, z):
     ff = ff0 * 1. / delta**2.# * abs_uv
     return ff
 
-def qwind_integration_dblquad(r, z, disk_r_min, disk_r_max, epsabs=1e-11):
+def qwind_integration_dblquad(r, z, disk_r_min, disk_r_max, epsabs=0, epsrel=1e-4, full_output=False):
     """
     Double quad integration of the radiation force integral, using the Nquad
     algorithm. 
@@ -229,19 +229,30 @@ def qwind_integration_dblquad(r, z, disk_r_min, disk_r_max, epsabs=1e-11):
             2: error of the radial integral.
             3: error of the z integral
     """
-    r_int, r_error = scipy.integrate.nquad(
+    r_result = scipy.integrate.nquad(
         _integrate_dblquad_kernel_r_jitted, ((
             0, np.pi), (disk_r_min, disk_r_max)),
         args=(r, z),
-        opts=[{'points': [0], 'epsabs' : epsabs}, {'points': [r], 'epsabs' : epsabs}])
-    z_int, z_error = scipy.integrate.nquad(
+        opts=[{'points': [], 'epsabs' : epsabs, 'epsrel' : epsrel}, {'points': [], 'epsabs' : epsabs, 'epsrel' : epsrel}],
+        full_output=full_output)
+    z_result = scipy.integrate.nquad(
         _integrate_dblquad_kernel_z_jitted, ((
             0, np.pi), (disk_r_min, disk_r_max)),
         args=(r, z),
-        opts=[{'points': [0], 'epsabs' : epsabs}, {'points': [r], 'epsabs' : epsabs}])
+        opts=[{'points': [], 'epsabs' : epsabs, 'epsrel' : epsrel}, {'points': [], 'epsabs' : epsabs, 'epsrel' : epsrel}],
+        full_output=full_output)
+    if full_output:
+        r_int, r_error, r_dict = r_result
+        z_int, z_error, z_dict = z_result
+    else:
+        r_int, r_error = r_result
+        z_int, z_error = z_result
     r_int = 2. * z * r_int
     z_int = 2. * z**2 * z_int
-    return (r_int, z_int, r_error, z_error)
+    if full_output:
+        return (r_int, z_int, r_error, z_error, r_dict, z_dict)
+    else: 
+        return (r_int, z_int, r_error, z_error)
 
 def qwind_integration_rel(r, z, disk_r_min, disk_r_max, epsabs=0, epsrel=1e-11):
     """
@@ -280,8 +291,8 @@ def qwind_integration_rel(r, z, disk_r_min, disk_r_max, epsabs=0, epsrel=1e-11):
 
 ## old integral ##
 
-
-phids = np.linspace(0, np.pi, 100 + 1)
+# originl is 100 , 250
+phids = np.linspace(0, np.pi, 250 + 1)
 deltaphids = np.asarray([phids[i + 1] - phids[i]
                          for i in range(0, len(phids) - 1)])
 rds = np.geomspace(6, 1400, 250 + 1)
@@ -304,7 +315,7 @@ def _qwind_integral_kernel(r_d, phi_d, r, z):
     delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
     cos_gamma = (r - r_d * np.cos(phi_d))
     ff = 1. / delta ** 2.
-    return [ff * cos_gamma, ff]
+    return np.array([ff * cos_gamma, ff])
 
 
 @jit(nopython=True)

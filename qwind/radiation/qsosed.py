@@ -8,8 +8,30 @@ from qwind.integration import qwind2 as integration
 from numba import njit
 from qsosed import sed
 from qwind import grid
+from skimage.draw import line
 
 import qwind.constants as const
+# interpolation values for force multiplier #
+_K_INTERP_XI_VALUES = [-4, -3, -2.26, -2.00, -1.50, -1.00,
+                      -0.42, 0.00, 0.22, 0.50, 1.0,
+                      1.5, 1.8, 2.0, 2.18, 2.39,
+                      2.76, 3.0, 3.29, 3.51, 3.68, 4.0]
+_K_INTERP_K_VALUES = [0.411, 0.411, 0.400, 0.395, 0.363, 0.300,
+                     0.200, 0.132, 0.100, 0.068, 0.042,
+                     0.034, 0.033, 0.021, 0.013, 0.048,
+                     0.046, 0.042, 0.044, 0.045, 0.032,
+                     0.013]
+_ETAMAX_INTERP_XI_VALUES = [-3, -2.5, -2.00, -1.50, -1.00,
+                           -0.5, -0.23, 0.0, 0.32, 0.50,
+                           1.0, 1.18, 1.50, 1.68, 2.0,
+                           2.02, 2.16, 2.25, 2.39, 2.79,
+                           3.0, 3.32, 3.50, 3.75, 4.00]
+
+_ETAMAX_INTERP_ETAMAX_VALUES = [6.95, 6.95, 6.98, 7.05, 7.26,
+                               7.56, 7.84, 8.00, 8.55, 8.95,
+                               8.47, 8.00, 6.84, 6.00, 4.32,
+                               4.00, 3.05, 2.74, 3.00, 3.10,
+                               2.73, 2.00, 1.58, 1.20, 0.78]
 
 
 def cooling_g_compton(T, xi, Tx=1e8):
@@ -35,76 +57,87 @@ class Radiation:
     This class handles all the calculations involving the radiation field, i.e., radiative opacities, optical depths, radiation force, etc.
     Original implementation of RE2010.
     """
-
     def __init__(self, wind):
         self.wind = wind
+        self.qsosed = sed.SED(self.wind.M / const.M_SUN, self.wind.mdot, number_bins_fractions=500)
+        self.uv_radial_flux_fraction = self.qsosed.compute_uv_fractions()
+        if "qsosed_geometry" in self.wind.modes:
+            self.xray_fraction = self.qsosed.xray_fraction
+            self.uv_fraction = self.qsosed.uv_fraction
+            self.FORCE_RADIATION_CONSTANT = 3. / (8. * np.pi * self.wind.eta)
+            self.wind.disk_r_min = self.qsosed.warm_radius
+            self.wind.disk_r_max = self.qsosed.gravity_radius
+            #update grid
+            integration.UV_FRACTION_GRID_RANGE = np.linspace(self.wind.disk_r_min, self.wind.disk_r_max, 500)
+            integration.UV_FRACTION_GRID = self.uv_radial_flux_fraction
+        else:
+            self.xray_fraction = self.wind.f_x 
+            self.uv_fraction = 1 - self.wind.f_x
+            self.FORCE_RADIATION_CONSTANT = 3. / (8. * np.pi * self.wind.eta) * self.uv_fraction
+            integration.UV_FRACTION_GRID_RANGE = np.linspace(self.wind.disk_r_min, self.wind.disk_r_max, 500)
+            integration.UV_FRACTION_GRID = np.ones(500)
         self.mdot_0 = wind.mdot
-        self.qsosed = sed.SED(self.wind.M / const.M_SUN, self.wind.mdot)
-        self.xray_fraction = self.wind.f_x 
-        self.uv_fraction = 1 - self.wind.f_x
+        self.mdot_grid = self.mdot_0 * np.ones(500)
+        integration.MDOT_GRID = self.mdot_grid
+        self.mdot_grid_range = np.linspace(self.wind.disk_r_min, self.wind.disk_r_max, 500)
+        integration.MDOT_GRID_RANGE = self.mdot_grid_range
         self.dr = (self.wind.lines_r_max - self.wind.lines_r_min) / (self.wind.nr - 1)
         self.wind.tau_dr_0 = self.wind.tau_dr(self.wind.rho_shielding)
-        self.xray_luminosity = self.wind.mdot * \
-            self.wind.eddington_luminosity * self.xray_fraction
-        self.FORCE_RADIATION_CONSTANT = 3. / \
-            (8. * np.pi * self.wind.eta) * self.uv_fraction
+        self.xray_luminosity = self.wind.mdot * self.wind.eddington_luminosity * self.xray_fraction
         self.int_hist = []
         self.int_error_hist = []
 
         self.integrator = integration.Integrator(self)
 
-        # interpolation values for force multiplier #
-        K_INTERP_XI_VALUES = [-4, -3, -2.26, -2.00, -1.50, -1.00,
-                              -0.42, 0.00, 0.22, 0.50, 1.0,
-                              1.5, 1.8, 2.0, 2.18, 2.39,
-                              2.76, 3.0, 3.29, 3.51, 3.68, 4.0]
-        K_INTERP_K_VALUES = [0.411, 0.411, 0.400, 0.395, 0.363, 0.300,
-                             0.200, 0.132, 0.100, 0.068, 0.042,
-                             0.034, 0.033, 0.021, 0.013, 0.048,
-                             0.046, 0.042, 0.044, 0.045, 0.032,
-                             0.013]
-        ETAMAX_INTERP_XI_VALUES = [-3, -2.5, -2.00, -1.50, -1.00,
-                                   -0.5, -0.23, 0.0, 0.32, 0.50,
-                                   1.0, 1.18, 1.50, 1.68, 2.0,
-                                   2.02, 2.16, 2.25, 2.39, 2.79,
-                                   3.0, 3.32, 3.50, 3.75, 4.00]
-
-        ETAMAX_INTERP_ETAMAX_VALUES = [6.95, 6.95, 6.98, 7.05, 7.26,
-                                       7.56, 7.84, 8.00, 8.55, 8.95,
-                                       8.47, 8.00, 6.84, 6.00, 4.32,
-                                       4.00, 3.05, 2.74, 3.00, 3.10,
-                                       2.73, 2.00, 1.58, 1.20, 0.78]
         self.k_interpolator = interpolate.interp1d(
-            K_INTERP_XI_VALUES,
-            K_INTERP_K_VALUES,
+            _K_INTERP_XI_VALUES,
+            _K_INTERP_K_VALUES,
             bounds_error=False,
-            fill_value=(K_INTERP_K_VALUES[0], K_INTERP_K_VALUES[-1]),
+            fill_value=(_K_INTERP_K_VALUES[0], _K_INTERP_K_VALUES[-1]),
             kind='cubic')  # important! xi is log here
         self.log_etamax_interpolator = interpolate.interp1d(
-            ETAMAX_INTERP_XI_VALUES,
-            ETAMAX_INTERP_ETAMAX_VALUES,
+            _ETAMAX_INTERP_XI_VALUES,
+            _ETAMAX_INTERP_ETAMAX_VALUES,
             bounds_error=False,
             fill_value=(
-                ETAMAX_INTERP_ETAMAX_VALUES[0],
-                ETAMAX_INTERP_ETAMAX_VALUES[-1]),
+                _ETAMAX_INTERP_ETAMAX_VALUES[0],
+                _ETAMAX_INTERP_ETAMAX_VALUES[-1]),
             kind='cubic')  # important! xi is log here
 
-    def mass_accretion_rate_grid(self, N):
+        # Interpolation grids #
+        self.initialize_all_grids()
+        
+
+    def compute_mass_accretion_rate_grid(self, lines):
         """
         Returns mass accretion rate at radius r, taking into account the escaped wind.
+        Also updates it from the grid file.
         """
-        mdot_list = []
-        r_range = np.linspace(self.wind.disk_r_min, self.wind.disk_r_max, N) 
-        for r in r_range:
-            if r > self.wind.escaped_radii[0] and r < self.wind.escaped_radii[-1]:
-                mdot_wind = self.wind.mdot_w * self.wind.eta * const.C**2 / self.qsosed.eddington_luminosity 
-                mdot = self.mdot_0 - mdot_wind 
-            else:
-                mdot = self.mdot_0
-            mdot_list.append(mdot)
-        return np.array(mdot_list)
+        new_mdot_list = self.mdot_grid.copy()
+        lines_escaped = np.array(lines)[np.where([line.escaped for line in lines])[0]]
+        for line in lines_escaped:
+            r_0 = line.r_0
+            width = line.width
+            r_f_arg = np.searchsorted(self.mdot_grid_range, r_0 + width/2.)
+            mdot_w = self.wind.compute_line_mass_loss(line) 
+            new_mdot_list[0:r_f_arg] -= mdot_w
+        self.mdot_grid = np.array(new_mdot_list)
+        integration.MDOT_GRID = self.mdot_grid 
 
-    def optical_depth_uv_integrand(self, t, r, z, grid_r_range, grid_z_range, density_grid):
+
+        #for r in r_range:
+        #    if r > self.wind.escaped_radii[0] and r < self.wind.escaped_radii[-1]:
+        #        mdot_wind = self.wind.mdot_w * self.wind.eta * const.C**2 / self.qsosed.eddington_luminosity 
+        #        mdot = self.mdot_0 - mdot_wind 
+        #    else:
+        #        mdot = self.mdot_0
+        #    mdot_list.append(mdot)
+        #return np.array(mdot_list)
+
+    def _optical_depth_uv_integrand(self, t, r, z, grid_r_range, grid_z_range, density_grid):
+        """
+        Auxiliary function used to compute the UV optical depth.
+        """
         r = t * r
         z = t * z
         r_arg = np.searchsorted(grid_r_range, r, side="left")
@@ -115,7 +148,7 @@ class Radiation:
         return density 
 
         
-    def optical_depth_uv(self,r, z, r_0, tau_dr, tau_dr_shielding):
+    def optical_depth_uv(self,r, z, r_0, tau_dr, tau_dr_0):
         """
         UV optical depth.
         
@@ -126,34 +159,42 @@ class Radiation:
         Returns:
             UV optical depth at point (r,z) 
         """
-        #t_range = np.linspace(0,1)
-        #r_range = t_range * r
-        #z_range = t_range * z
-        grid_r_range = grid.GRID_R_RANGE 
-        grid_z_range = grid.GRID_Z_RANGE 
-        density_grid = grid.DENSITY_GRID 
-        #r_arg = np.searchsorted(grid_r_range, r_range)
-        #r_arg[np.where(r_arg == len(grid_r_range))] = len(grid_r_range) - 1
-        #z_arg = np.searchsorted(grid_z_range, z_range)
-        #z_arg[np.where(z_arg == len(grid_z_range))] = len(grid_z_range) - 1
-        #density_values = grid[r_arg, z_arg]
-        #density_values = self.wind.density_grid.get_value(r_range, z_range)
-        line_element = np.sqrt(r**2 + z**2) * self.wind.RG * const.SIGMA_T
-        #tau_uv = np.trapz(x=t_range, y=density_values) * const.SIGMA_T * line_element * self.wind.RG
-        #return tau_uv
-        #gr = self.wind.density_grid
-        tau_uv_int = integrate.quad(self.optical_depth_uv_integrand,
-                                    a=0,
-                                    b=1,
-                                    args=(r, z, grid_r_range, grid_z_range, density_grid),
-                                    epsabs=0,
-                                    epsrel=1e-2)[0]
-        return tau_uv_int * line_element
-        #tau_uv = tau_uv_int * line_element * self.wind.RG
-        #return tau_uv
+        if "uv_interp" in self.wind.modes:
+            #grid_r_range = grid.GRID_R_RANGE 
+            #grid_z_range = grid.GRID_Z_RANGE 
+            #density_grid = grid.DENSITY_GRID 
+            #line_element = np.sqrt(r**2 + z**2) * self.wind.RG * const.SIGMA_T
+            #tau_uv_int = integrate.quad(self._optical_depth_uv_integrand,
+            #                            a=0,
+            #                            b=1,
+            #                            args=(r, z, grid_r_range, grid_z_range, density_grid),
+            #                            epsabs=0,
+            #                            epsrel=1e-2)[0]
+            #return tau_uv_int * line_element
+            dtau_grid = self.density_grid.grid * const.SIGMA_T * self.wind.RG
+            r_arg, z_arg = self.density_grid.get_arg(r,z) 
+            line_coordinates = line(0,0, r_arg, z_arg)
+            tau = dtau_grid[line_coordinates].sum() / len(line_coordinates[0]) * np.sqrt(r**2 + z**2)
+            return tau
+        else:
+            delta_r_0 = abs(r_0 - self.wind.r_init)
+            delta_r = abs(r - r_0 - self.dr/2)
+            distance = np.sqrt(r**2 + z**2)
+            sec_theta = distance / r
+            tau_uv = sec_theta * (delta_r_0 * tau_dr_0 + delta_r * tau_dr)
+            tau_uv = min(tau_uv, 50)
+            if tau_uv < 0:
+                print("warning")
+            tau_uv = max(tau_uv,0)
+            try:
+                assert tau_uv >= 0, "UV optical depth cannot be negative!"
+            except AssertionError:
+                print(f"r: {r} \n z : {z} \n r_0 : {r_0}\n tau_dr: {tau_dr} \n tau_dr_0: {tau_dr_0} \n\n")
+                raise AssertionError 
+            return tau_uv
 
         
-    def ionization_parameter(self, r, z, tau_x, rho_shielding):
+    def ionization_parameter(self, r, z, tau_x, rho):
         """
         Computes Ionization parameter.
 
@@ -167,8 +208,10 @@ class Radiation:
         Returns:
             ionization parameter.
         """
-        xi = self.wind.ionization_grid.get_value(r,z)
-        return xi
+        tau_x = self.tau_x_grid.get_value(r,z)
+        d2 = r**2. + z**2.
+        xi = self.xray_luminosity * np.exp(-tau_x) /  ( rho * d2 * self.wind.RG**2)
+        return xi + 1e-15 # to avoid roundoff issues
 
     def optical_depth_x(self, r, z, r_0, tau_dr, tau_dr_0, rho_shielding):
         """
@@ -185,7 +228,7 @@ class Radiation:
         Returns:
             X-Ray optical depth at the point (r,z)
         """
-        tau_x = self.wind.tau_x_grid.get_value(r,z)
+        tau_x = self.tau_x_grid.get_value(r,z)
         return tau_x
         
     def force_multiplier_k(self, xi):
@@ -309,7 +352,16 @@ class Radiation:
         error = i_aux[2:4]
         self.int_error_hist.append(error)
         self.int_hist.append(i_aux)
-        abs_uv = np.exp(-tau_uv)
+        if no_tau_z == True:
+            d = np.sqrt(r**2 + z**2)
+            sin_theta = z / d
+            cos_theta = r / d
+            tau_uv = tau_uv * np.array([cos_theta, 0, sin_theta])
+            abs_uv = np.exp(-tau_uv)
+        elif no_tau_uv == True:
+            abs_uv = 1
+        else:
+            abs_uv = np.exp(-tau_uv)
         constant = abs_uv * (1 + fm) * self.FORCE_RADIATION_CONSTANT
         force = constant  * np.asarray([i_aux[0],
                                         0.,
@@ -320,3 +372,24 @@ class Radiation:
             error = constant * np.array(error)
             return [force, error]
         return force
+
+    def initialize_all_grids(self):
+        self.density_grid = grid.DensityGrid(self.wind.rho_shielding)
+        self.ionization_grid = grid.IonizationParameterGrid(self.xray_luminosity, self.wind.RG)
+        self.tau_x_grid = grid.OpticalDepthXrayGrid(self.wind.RG)
+        self.update_all_grids(init=True)
+
+    def update_all_grids(self, init=False):
+        """
+        Updates all grids after one iteration (density, ionization parameter, optical depth)
+        """
+        print("updating grids...")
+        if not init:
+            self.density_grid.update_grid(self.wind)
+        self.ionization_grid.update_grid(self.density_grid, self.tau_x_grid)
+        self.tau_x_grid.update_grid(self.density_grid, self.ionization_grid)
+        print("...")
+        self.ionization_grid.update_grid(self.density_grid, self.tau_x_grid)
+        self.tau_x_grid.update_grid(self.density_grid, self.ionization_grid)
+        self.ionization_grid.update_grid(self.density_grid, self.tau_x_grid)
+

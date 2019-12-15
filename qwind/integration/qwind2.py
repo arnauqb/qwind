@@ -14,11 +14,11 @@ from qwind import grid
 
 from qwind import constants as const
 RG = 0. 
-mdot_grid = np.zeros(500)
-mdot_grid_r_range = np.linspace(6, 1600, 500)
+UV_FRACTION_GRID = np.ones(500)
+UV_FRACTION_GRID_RANGE = np.ones(500)
+MDOT_GRID = np.zeros(500)
+MDOT_GRID_RANGE = np.linspace(6, 1600, 500)
 DENSITY_GRID = np.zeros((500,500)) 
-#grid_r_range = np.linspace(0, 2000, 500) 
-#grid_z_range = np.linspace(1, 1000, 501)
 GRID_R_RANGE = grid.GRID_R_RANGE
 GRID_Z_RANGE = grid.GRID_Z_RANGE
 
@@ -112,8 +112,13 @@ def get_density_value(r,z):
 
 @njit
 def get_mdot_value(r_d):
-    rd_arg = np.searchsorted(mdot_grid_r_range, r_d, side="left")
-    return mdot_grid[rd_arg]
+    rd_arg = np.searchsorted(MDOT_GRID_RANGE, r_d, side="left")
+    return MDOT_GRID[rd_arg]
+
+@njit
+def get_uv_fraction_value(r_d):
+    rd_arg = np.searchsorted(UV_FRACTION_GRID_RANGE, r_d, side="left")
+    return UV_FRACTION_GRID[rd_arg]
 
 @njit
 def optical_depth_uv_integrand(t_range, r_d, phi_d, r, z):
@@ -212,10 +217,11 @@ def _integrate_r_kernel_notau(phi_d, r_d, r, z):
 
     """
     mdot = get_mdot_value(r_d)
+    uv_fraction = get_uv_fraction_value(r_d)
     ff0 = nt_rel_factors(r_d) / r_d**2.
     delta = r**2. + r_d**2. + z**2. - 2.*r*r_d * np.cos(phi_d)
     cos_gamma = (r - r_d*np.cos(phi_d)) / delta**2.
-    ff = ff0 * cos_gamma * mdot
+    ff = ff0 * cos_gamma * mdot * uv_fraction
     return ff
 
 def _integrate_z_kernel_notau(phi_d, r_d, r, z):
@@ -233,9 +239,10 @@ def _integrate_z_kernel_notau(phi_d, r_d, r, z):
 
     """
     mdot = get_mdot_value(r_d)
+    uv_fraction = get_uv_fraction_value(r_d)
     ff0 = nt_rel_factors(r_d) / r_d**2.
     delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
-    ff = ff0 * 1. / delta**2. * mdot
+    ff = ff0 * 1. / delta**2. * mdot * uv_fraction
     return ff
 
 
@@ -245,14 +252,6 @@ class Integrator:
         self.radiation = radiation
         global RG
         RG = self.radiation.wind.RG
-        global DENSITY_GRID 
-        DENSITY_GRID = self.radiation.wind.density_grid.grid
-        #global grid_r_range
-        #grid_r_range = self.radiation.wind.density_grid.grid_r_range
-        #global grid_z_range
-        #grid_z_range = self.radiation.wind.density_grid.grid_z_range
-        global mdot_grid
-        mdot_grid = self.radiation.mass_accretion_rate_grid(500)
 
         if notau:
             self._integrate_z = jit_integrand(_integrate_z_kernel_notau)
