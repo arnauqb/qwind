@@ -9,19 +9,18 @@ from matplotlib.colors import LogNorm
 from skimage.draw import line_aa as compute_line_coordinates
 import cmocean.cm as colormaps
 
-N_R = 150
-N_Z = 151
-R_MAX_DEFAULT = 1000
-Z_MAX_DEFAULT = 1000 
+N_R = 500
+N_Z = 501
+N_1D_GRID = 500
+R_MAX_DEFAULT = 3000
+Z_MAX_DEFAULT = 3000 
 GRID_R_RANGE = np.linspace(0.01, R_MAX_DEFAULT, N_R)
 GRID_Z_RANGE = np.linspace(0.01, Z_MAX_DEFAULT, N_Z) 
-#GRID_CELL_SIZE = np.sqrt(2) * (GRID_R_RANGE[1] - GRID_R_RANGE[0])
 DENSITY_GRID = 2e8 * np.ones((N_R, N_Z))
 IONIZATION_GRID = 1e3 * np.ones((N_R, N_Z))
-#taux_grid_r_range = np.linspace(0, R_MAX_DEFAULT, N_R)
-#taux_grid_z_range= np.linspace(0, Z_MAX_DEFAULT, N_Z)
-#taux_density_grid = 2e8 * np.ones((N_R,N_Z))
-#taux_ionization_grid = 1e3 * np.ones((N_R, N_Z))
+GRID_1D_RANGE = np.linspace(6, 1600, N_1D_GRID)
+UV_FRACTION_GRID = np.ones(N_1D_GRID)
+MDOT_GRID = np.zeros(N_1D_GRID)
 
 def find_index(r,z):
     r_idx = np.argmin(np.abs(GRID_R_RANGE - r))
@@ -53,6 +52,26 @@ class Grid:
             plt.pcolormesh(GRID_R_RANGE, GRID_Z_RANGE, self.grid.T, cmap = cmap, norm=LogNorm(vmin=vmin, vmax=vmax))
         plt.colorbar()
         plt.show()
+
+class Grid1D:
+    """
+    General grid class
+    """
+    def __init__(self, initial_value):
+        self.grid = initial_value * np.ones(N_1D_GRID)
+
+    def get_value(self, r):
+        r_arg = self.get_arg(r)
+        return_values = self.grid[r_arg]
+        return return_values
+
+    def get_arg(self, r):
+        r_arg = np.minimum(np.searchsorted(GRID_1D_RANGE, r, side="right"), len(GRID_1D_RANGE)-1)
+        return r_arg
+
+class MdotGrid(Grid1D):
+    def __init__(self, initial_value):
+        super().__init__(initial_value)
 
 class DensityGrid(Grid):
     
@@ -185,6 +204,7 @@ class OpticalDepthXrayGrid(Grid):
         self.rz_grid = np.array([rr.flatten(), zz.flatten()]).T
         self.Rg = Rg
 
+
     def update_grid(self, density_grid, ionization_grid):
         #global DENSITY_GRID 
         #DENSITY_GRID = density_grid.grid.copy()
@@ -197,7 +217,7 @@ class OpticalDepthXrayGrid(Grid):
         tau_grid = []
         for value in self.rz_grid:
             r_arg, z_arg = self.get_arg(*value)
-            rr, zz, val = compute_line_coordinates(0,0, r_arg, z_arg)
+            rr, zz, val = compute_line_coordinates(0, 0, r_arg, z_arg)
             tau = (val * self.dtau_grid[rr,zz]).sum() / len(rr) * np.sqrt(value[0]**2 + value[1]**2)
             tau_grid.append(tau)
         self.grid = np.array(tau_grid).reshape(len(GRID_R_RANGE), len(GRID_Z_RANGE))

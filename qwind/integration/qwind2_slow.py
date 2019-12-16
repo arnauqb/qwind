@@ -3,6 +3,7 @@ Auxiliary file for Numba functions.
 """
 
 import inspect
+from qwind import grid
 
 import numpy as np
 import scipy
@@ -23,17 +24,27 @@ class Integrator:
         self.radiation = radiation
         global RG
         RG = self.radiation.wind.RG
+        self.R_RANGE = grid.GRID_R_RANGE
+        self.Z_RANGE = grid.GRID_Z_RANGE
+        args_dtype = types.Record.make_c_struct([('r', types.float64),
+                                                ('z', types.float64),
+                                                ('r_range', types.NestedArray(dtype=types.float64, shape=grid.GRID_R_RANGE.shape)),
+                                                ('z_range', types.NestedArray(dtype=types.float64, shape=grid.GRID_Z_RANGE.shape)),
+                                                ('mdot_grid', types.NestedArray(dtype=types.float64, shape=grid.MDOT_GRID.shape)),])
+                                                
+        args=np.array((r,z, self.radiation.mdot_grid, self.R_RANGE, self.Z_RANGE ),dtype=args_dtype)
+        func_r = integrand_r_jit_dummy(args,args_dtype)
+        func_z = integrand_z_jit_dummy(args,args_dtype)
+        self.integrand_func_r = LowLevelCallable(func_r.ctypes,user_data=args.ctypes.data_as(ctypes.c_void_p))
+        self.integrand_func_z = LowLevelCallable(func_z.ctypes,user_data=args.ctypes.data_as(ctypes.c_void_p))
+
            
-        
-    
     def integrate(self,
                   r,
                   z,
-                  grid,
-                  grid_r_range,
-                  grid_z_range,
-                  disk_r_min,
-                  disk_r_max,
+                  mdot_grid,
+                  disk_r_min=6,
+                  disk_r_max=1600,
                   epsabs=0, 
                   epsrel=1e-3):
         """
@@ -53,20 +64,8 @@ class Integrator:
                 2: error of the radial integral.
                 3: error of the z integral
         """
-        args_dtype = types.Record.make_c_struct([('r', types.float64),
-                                                ('z', types.float64),
-                                                ('grid', types.NestedArray(dtype=types.float64, shape=grid.shape)),
-                                                ('grid_r_range', types.NestedArray(dtype=types.float64, shape=grid_r_range.shape)),
-                                                ('grid_z_range', types.NestedArray(dtype=types.float64, shape=grid_z_range.shape)),])
-                                                
-        args=np.array((r,z,grid,grid_r_range, grid_z_range),dtype=args_dtype)
-        func_r = integrand_r_jit_dummy(args,args_dtype)
-        func_z = integrand_z_jit_dummy(args,args_dtype)
-        integrand_func_r = LowLevelCallable(func_r.ctypes,user_data=args.ctypes.data_as(ctypes.c_void_p))
-        integrand_func_z = LowLevelCallable(func_z.ctypes,user_data=args.ctypes.data_as(ctypes.c_void_p))
-        r_int, r_error = nquad(integrand_func_r, [(0, np.pi), (disk_r_min, disk_r_max)], opts=[{'epsabs' : epsabs, 'epsrel': epsrel}, {'epsabs': epsabs, 'epsrel': epsrel}])
-        #r_int, r_error = nquad(integrand_func_r, [(0, np.pi), (disk_r_min, disk_r_max)]) #, opts=[{'epsabs' : epsabs, 'epsrel': epsrel}, {'epsabs': epsabs, 'epsrel': epsrel}])
-        z_int, z_error = nquad(integrand_func_z, [(0, np.pi), (disk_r_min, disk_r_max)], opts=[{'epsabs' : epsabs, 'epsrel': epsrel}, {'epsabs': epsabs, 'epsrel': epsrel}])
+        r_int, r_error = nquad(self.integrand_func_r, [(0, np.pi), (disk_r_min, disk_r_max)], opts=[{'epsabs' : epsabs, 'epsrel': epsrel}, {'epsabs': epsabs, 'epsrel': epsrel}])
+        z_int, z_error = nquad(self.integrand_func_z, [(0, np.pi), (disk_r_min, disk_r_max)], opts=[{'epsabs' : epsabs, 'epsrel': epsrel}, {'epsabs': epsabs, 'epsrel': epsrel}])
         r_int = 2. * z * r_int
         z_int = 2. * z**2 * z_int
         return (r_int, z_int, r_error, z_error)
@@ -75,19 +74,24 @@ class Integrator:
     def create_jit_integrand_function(integrand_function,args,args_dtype):
         jitted_function = nb.jit(integrand_function, nopython=True, cache=True)
     	
-        @nb.cfunc(types.float64(int32,CPointer(float64),types.CPointer(args_dtype)))
-        def wrapped(phi_d, r_d, user_data_p):
-            #Array of structs
-            user_data = nb.carray(user_data_p, 1)
-            
-            #Extract the data
-            r = user_data[0].r
-            z = user_data[0].z
-            grid = user_data[0].grid
-            grid_r_range = user_data[0].grid_r_range
-            grid_z_range = user_data[0].grid_z_range
-            return jitted_function(phi_d, r_d, r, z, grid, grid_r_range, grid_z_range)
-        return wrapped
+        #@nb.cfunc(types.float64(int32,CPointer(float64),types.CPointer(args_dtype)))
+        #def wrapped(phi_d, r_d, user_data_p):
+        #    #Array of structs
+        #    user_data = nb.carray(user_data_p, 1)
+        #    
+        #    #Extract the data
+        #    r = user_data[0].r
+        #    z = user_data[0].z
+        #    grid = user_data[0].grid
+        #    grid_r_range = user_data[0].grid_r_range
+        #    grid_z_range = user_data[0].grid_z_range
+        #    return jitted_function(phi_d, r_d, r, z, grid, grid_r_range, grid_z_range)
+        #return wrapped
+        @cfunc(float64(intc, CPointer(float64)))
+        def wrapped(n, xx):
+            return jitted_function(xx[0], xx[1], xx[2], xx[3])
+        return LowLevelCallable(wrapped.ctypes)
+
     
     @staticmethod
     def integrand_z_jit_dummy(args,args_dtype):
@@ -127,48 +131,12 @@ class Integrator:
         A = 1 - yms / y - 3 * astar * np.log(y / yms) / (2 * y)
         factor = (A-B)/C
         return factor
-    
-    @staticmethod
-    @jit(nopython=True, parallel=True)
-    def optical_depth_uv_integrand(t_range, r_d, phi_d, r, z, grid, grid_r_range, grid_z_range):
-        x = r_d * np.cos(phi_d) + t_range * (r - r_d * np.cos(phi_d))
-        y = r_d * np.sin(phi_d) + t_range * (- r_d * np.sin(phi_d))
-        z = t_range * z
-        r = np.sqrt(x**2 + y**2)
-        r_arg = np.searchsorted(grid_r_range, r, side="left")
-        z_arg = np.searchsorted(grid_z_range, z, side="left")
-        density_values = []
-        for i in range(0,len(r_arg)):
-            dvalue = grid[r_arg[i], z_arg[i]]
-            density_values.append(dvalue)
-        dtau = const.SIGMA_T * np.array(density_values) #np.array(density_values) 
-        return dtau
-    
-    
-    @staticmethod
-    @jit(nopython=True)
-    def optical_depth_uv(r_d, phi_d, r, z, grid, grid_r_range, grid_z_range):
-        """
-        UV optical depth.
-        
-        Args:
-            r: radius in Rg units.
-            z: height in Rg units.
-        
-        Returns:
-            UV optical depth at point (r,z) 
-        """
-        line_element = np.sqrt(r**2 + r_d**2 + z**2 - 2 * r * r_d * np.cos(phi_d))
-        t_range = np.linspace(0,1, 20)
-        int_values = optical_depth_uv_integrand(t_range, r_d, phi_d, r, z, grid, grid_r_range, grid_z_range)
-        tau_uv_int = np.trapz(x=t_range, y=int_values)
-        tau_uv = tau_uv_int * line_element * RG
-        return tau_uv
-    
+      
     #@jit(nopython=True)
     #@jit_integrand
     @staticmethod
-    def _integrate_r_kernel(n_arg, x, r, z, grid, grid_r_range, grid_z_range):
+    #def _integrate_r_kernel(n_arg, x, r, z, r_range, z_range, mdot_grid):
+    def _integrate_z_kernel(x, *args):
         """
         Radial part the radiation force integral.
     
@@ -184,19 +152,25 @@ class Integrator:
         """
         phi_d = x[0]
         r_d = x[1]
-        tau_uv = optical_depth_uv(r_d, phi_d, r, z, grid, grid_r_range, grid_z_range)
-        abs_uv = np.exp(-tau_uv)
+        r = args[0]
+        z = args[1]
+        r_range = args[2]
+        z_range = args[3]
+        mdot_grid = args[4]
+        mdot_arg = np.argmin(np.abs(r_range) - r_d)
+        mdot = mdot_grid[mdot_arg]
         ff0 = nt_rel_factors(r_d) / r_d**2.
         delta = r**2. + r_d**2. + z**2. - 2.*r*r_d * np.cos(phi_d)
         cos_gamma = (r - r_d*np.cos(phi_d)) / delta**2.
-        ff = ff0 * cos_gamma * abs_uv
+        ff = ff0 * cos_gamma * mdot 
         return ff
     
     #@jit(nopython=True)
     #@cfunc(float64(float64, float64, float64, float64, CPointer(float64), CPointer(float64), intp, CPointer(float64), intp))
     #@jit_integrand
     @staticmethod
-    def _integrate_z_kernel(n_arg, x, r, z, grid, grid_r_range, grid_z_range):
+    #def _integrate_z_kernel(n_arg, x, r, z, grid, grid_r_range, grid_z_range):
+    def _integrate_z_kernel(x, *args):
         """
         Z part the radiation force integral.
     
@@ -212,10 +186,15 @@ class Integrator:
         """
         phi_d = x[0]
         r_d = x[1]
-        tau_uv = optical_depth_uv(r_d, phi_d, r, z, grid, grid_r_range, grid_z_range)
-        abs_uv = np.exp(-tau_uv)
+        r = args[0]
+        z = args[1]
+        r_range = args[2]
+        z_range = args[3]
+        mdot_grid = args[4]
+        mdot_arg = np.argmin(np.abs(r_range) - r_d)
+        mdot = mdot_grid[mdot_arg]
         ff0 = nt_rel_factors(r_d) / r_d**2.
         delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
-        ff = ff0 * 1. / delta**2. * abs_uv
+        ff = ff0 * 1. / delta**2. * mdot
         return ff
     

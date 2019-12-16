@@ -59,35 +59,34 @@ class Radiation:
     """
     def __init__(self, wind):
         self.wind = wind
-        self.qsosed = sed.SED(self.wind.M / const.M_SUN, self.wind.mdot, number_bins_fractions=500)
-        self.uv_radial_flux_fraction = self.qsosed.compute_uv_fractions()
+        self.qsosed = sed.SED(self.wind.M / const.M_SUN, self.wind.mdot, number_bins_fractions=grid.N_1D_GRID)
         if "qsosed_geometry" in self.wind.modes:
+            self.uv_radial_flux_fraction = self.qsosed.compute_uv_fractions(return_all = False)
             self.xray_fraction = self.qsosed.xray_fraction
             self.uv_fraction = self.qsosed.uv_fraction
             self.FORCE_RADIATION_CONSTANT = 3. / (8. * np.pi * self.wind.eta)
             self.wind.disk_r_min = self.qsosed.warm_radius
             self.wind.disk_r_max = self.qsosed.gravity_radius
             #update grid
-            integration.UV_FRACTION_GRID_RANGE = np.linspace(self.wind.disk_r_min, self.wind.disk_r_max, 500)
-            integration.UV_FRACTION_GRID = self.uv_radial_flux_fraction
+            #integration.UV_FRACTION_GRID_RANGE = np.linspace(self.wind.disk_r_min, self.wind.disk_r_max, 500)
+            grid.UV_FRACTION_GRID = self.uv_radial_flux_fraction
         else:
             self.xray_fraction = self.wind.f_x 
             self.uv_fraction = 1 - self.wind.f_x
             self.FORCE_RADIATION_CONSTANT = 3. / (8. * np.pi * self.wind.eta) * self.uv_fraction
-            integration.UV_FRACTION_GRID_RANGE = np.linspace(self.wind.disk_r_min, self.wind.disk_r_max, 500)
-            integration.UV_FRACTION_GRID = np.ones(500)
+            grid.UV_FRACTION_GRID = np.ones(grid.N_1D_GRID)
         self.mdot_0 = wind.mdot
-        self.mdot_grid = self.mdot_0 * np.ones(500)
-        integration.MDOT_GRID = self.mdot_grid
-        self.mdot_grid_range = np.linspace(self.wind.disk_r_min, self.wind.disk_r_max, 500)
-        integration.MDOT_GRID_RANGE = self.mdot_grid_range
+        grid.GRID_1D_RANGE = np.linspace(self.wind.disk_r_min, self.wind.disk_r_max, grid.N_1D_GRID)
+        grid.MDOT_GRID = self.mdot_0 * np.ones_like(grid.GRID_1D_RANGE)
+        #integration.MDOT_GRID = self.mdot_0 * np.ones(500)
+        #self.mdot_grid = integration.MDOT_GRID
+        #integration.MDOT_GRID_RANGE = np.linspace(self.wind.disk_r_min, self.wind.disk_r_max, 500)
         self.dr = (self.wind.lines_r_max - self.wind.lines_r_min) / (self.wind.nr - 1)
         self.wind.tau_dr_0 = self.wind.tau_dr(self.wind.rho_shielding)
         self.xray_luminosity = self.wind.mdot * self.wind.eddington_luminosity * self.xray_fraction
         self.int_hist = []
         self.int_error_hist = []
 
-        self.integrator = integration.Integrator(self)
 
         self.k_interpolator = interpolate.interp1d(
             _K_INTERP_XI_VALUES,
@@ -105,7 +104,8 @@ class Radiation:
             kind='cubic')  # important! xi is log here
 
         # Interpolation grids #
-        self.initialize_all_grids()
+        self.initialize_all_grids(first_iter=True)
+        self.integrator = integration.Integrator(self)
         
 
     def compute_mass_accretion_rate_grid(self, lines):
@@ -113,17 +113,17 @@ class Radiation:
         Returns mass accretion rate at radius r, taking into account the escaped wind.
         Also updates it from the grid file.
         """
-        new_mdot_list = self.mdot_grid.copy()
+        new_mdot_list = integration.MDOT_GRID.copy()
         lines_escaped = np.array(lines)[np.where([line.escaped for line in lines])[0]]
         for line in lines_escaped:
             r_0 = line.r_0
-            width = line.width
-            r_f_arg = np.searchsorted(self.mdot_grid_range, r_0 + width/2.)
+            width = line.line_width
+            r_f_arg = np.searchsorted(integration.GRID_1D_RANGE, r_0 + width/2.)
             mdot_w = self.wind.compute_line_mass_loss(line) 
-            new_mdot_list[0:r_f_arg] -= mdot_w
-        self.mdot_grid = np.array(new_mdot_list)
-        integration.MDOT_GRID = self.mdot_grid 
-
+            mdot_w_normalized = mdot_w / self.qsosed.mass_accretion_rate 
+            new_mdot_list[0:r_f_arg] -= mdot_w_normalized
+        grid.MDOT_GRID = np.array(new_mdot_list)
+        self.mdot_grid.grid = grid.MDOT_GRID
 
         #for r in r_range:
         #    if r > self.wind.escaped_radii[0] and r < self.wind.escaped_radii[-1]:
@@ -373,13 +373,17 @@ class Radiation:
             return [force, error]
         return force
 
-    def initialize_all_grids(self):
+    def initialize_all_grids(self, first_iter=True):
         self.density_grid = grid.DensityGrid(self.wind.rho_shielding)
         self.ionization_grid = grid.IonizationParameterGrid(self.xray_luminosity, self.wind.RG)
         self.tau_x_grid = grid.OpticalDepthXrayGrid(self.wind.RG)
+        if first_iter:
+            self.mdot_grid = grid.Grid1D(self.mdot_0)
+            self.uv_fraction_grid = grid.Grid1D(1)
+            self.uv_fraction_grid.grid = grid.UV_FRACTION_GRID
         self.update_all_grids(init=True)
 
-    def update_all_grids(self, init=False):
+    def update_all_grids(self, init=False, end=False):
         """
         Updates all grids after one iteration (density, ionization parameter, optical depth)
         """
@@ -392,4 +396,6 @@ class Radiation:
         self.ionization_grid.update_grid(self.density_grid, self.tau_x_grid)
         self.tau_x_grid.update_grid(self.density_grid, self.ionization_grid)
         self.ionization_grid.update_grid(self.density_grid, self.tau_x_grid)
+
+        
 

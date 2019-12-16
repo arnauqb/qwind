@@ -317,6 +317,7 @@ class Qwind:
             plt.show()
             if self.radiation_class == "qsosed":
                 self.radiation.initialize_all_grids()
+                self.radiation.integrator.__init__(self.radiation)
         return self.lines
 
     def compute_line_mass_loss(self, line):
@@ -324,7 +325,7 @@ class Qwind:
         Computes wind mass loss rate after evolving the streamlines.
         """
         mdot_w_total = 0
-        width = line.width
+        width = line.line_width
         area = 2 * np.pi * ((line.r_0 + width/2.)**2. -
                             (line.r_0 - width/2.)**2) * self.RG**2.
         mdot_w = line.rho_0 * const.M_P * line.v_T_0 * const.C * area

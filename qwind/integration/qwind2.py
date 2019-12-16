@@ -11,16 +11,17 @@ from numba.types import CPointer, float64, intc
 from scipy import LowLevelCallable
 from scipy.integrate import quad
 from qwind import grid
-
 from qwind import constants as const
 RG = 0. 
-UV_FRACTION_GRID = np.ones(500)
-UV_FRACTION_GRID_RANGE = np.ones(500)
-MDOT_GRID = np.zeros(500)
-MDOT_GRID_RANGE = np.linspace(6, 1600, 500)
-DENSITY_GRID = np.zeros((500,500)) 
+#UV_FRACTION_GRID_RANGE = np.ones(500)
+GRID_1D_RANGE = grid.GRID_1D_RANGE 
+MDOT_GRID = grid.MDOT_GRID
+UV_FRACTION_GRID = grid.UV_FRACTION_GRID 
+#MDOT_GRID_RANGE = np.linspace(6, 1600, 500)
+#DENSITY_GRID = np.zeros((500,500)) 
 GRID_R_RANGE = grid.GRID_R_RANGE
-GRID_Z_RANGE = grid.GRID_Z_RANGE
+#GRID_Z_RANGE = grid.GRID_Z_RANGE
+#mdot_grid = MDOT_GRID
 
 def jit_integrand(integrand_function):
     """
@@ -112,13 +113,15 @@ def get_density_value(r,z):
 
 @njit
 def get_mdot_value(r_d):
-    rd_arg = np.searchsorted(MDOT_GRID_RANGE, r_d, side="left")
-    return MDOT_GRID[rd_arg]
+    rd_arg = min(np.searchsorted(GRID_1D_RANGE, r_d), len(GRID_1D_RANGE)-1)
+    mdot = MDOT_GRID[rd_arg]
+    return mdot 
 
 @njit
 def get_uv_fraction_value(r_d):
-    rd_arg = np.searchsorted(UV_FRACTION_GRID_RANGE, r_d, side="left")
-    return UV_FRACTION_GRID[rd_arg]
+    rd_arg = min(np.searchsorted(GRID_1D_RANGE, r_d), len(GRID_1D_RANGE)-1)
+    uv_fraction = UV_FRACTION_GRID[rd_arg]
+    return uv_fraction 
 
 @njit
 def optical_depth_uv_integrand(t_range, r_d, phi_d, r, z):
@@ -254,6 +257,12 @@ class Integrator:
         RG = self.radiation.wind.RG
 
         if notau:
+            global UV_FRACTION_GRID
+            UV_FRACTION_GRID = self.radiation.uv_fraction_grid.grid
+            global MDOT_GRID
+            MDOT_GRID = self.radiation.mdot_grid.grid
+            get_mdot_value.recompile()
+            get_uv_fraction_value.recompile()
             self._integrate_z = jit_integrand(_integrate_z_kernel_notau)
             self._integrate_r = jit_integrand(_integrate_r_kernel_notau)
             #self._integrate_z = _integrate_z_kernel_notau
@@ -264,7 +273,7 @@ class Integrator:
             self._integrate_z = jit_integrand(_integrate_z_kernel)
             self._integrate_r = jit_integrand(_integrate_r_kernel)
 
-    def integrate(self, r, z, disk_r_min, disk_r_max, epsabs=0, epsrel=1e-4):
+    def integrate(self, r, z, disk_r_min=6, disk_r_max=1600, epsabs=0, epsrel=1e-4):
         """
         Double quad integration of the radiation force integral, using the Nquad
         algorithm. 

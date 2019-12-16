@@ -205,7 +205,7 @@ class Radiation:
             delta_r = abs(r - r_0 - self.dr / 2)
             tau_x = sec_theta * (tau_dr_0 * delta_r_0 + tau_dr * delta_r)
             assert tau_x >= 0
-            tau_x = min(tau_x,50)
+            #tau_x = min(tau_x,50)
             return tau_x
 
         tau_x_0 = max(self.r_x - self.wind.r_init - self.dr/2.,0)
@@ -215,7 +215,7 @@ class Radiation:
         delta_r = abs(r - r_0 - self.dr / 2)
         tau_x = sec_theta * (tau_dr_0 * tau_x_0 + tau_dr *
                              self.opacity_x_r(r) * delta_r)
-        tau_x = min(tau_x, 50)
+        #tau_x = min(tau_x, 50)
         if tau_x < 0:
             print("warning")
         tau_x = max(tau_x,0)
