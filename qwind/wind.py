@@ -3,7 +3,6 @@ import sys, os
 import importlib
 import matplotlib.pyplot as plt
 from qwind.plot import Plotter
-import pyquad
 
 import numpy as np
 import pandas as pd
@@ -288,6 +287,9 @@ class Qwind:
         """
         for i in range(0, self.iterations):
             print(f"Iteration {i+1} of {self.iterations}")
+            #if self.radiation_class == "qsosed":
+            #    self.radiation.initialize_all_grids()
+            #    self.radiation.integrator.__init__(self.radiation)
             self.lines = []
             for i, r in enumerate(self.lines_r_range[:-1]):
                 self.lines.append(self.line(r_0=r,
@@ -305,19 +307,16 @@ class Qwind:
                 #except IDAError:
                 #    print("Terminating gracefully...")
                 #    pass
-                if self.radiation_class == "qsosed": 
-                    self.radiation.update_all_grids()
-                    if show_plots:
-                        self.plotter.plot_all_grids()
-                        plt.show()
+                #if self.radiation_class == "qsosed": 
+                #    self.radiation.update_all_grids()
+                #    if show_plots:
+                #        self.plotter.plot_all_grids()
+                #        plt.show()
 
             self.mdot_w, self.kinetic_luminosity, self.angle, self.v_terminal = self.compute_wind_properties()
             self.radiation.compute_mass_accretion_rate_grid(self.lines)
-            plt.plot(self.radiation.mdot_grid_range, self.radiation.mdot_grid)
+            plt.plot(grid.GRID_1D_RANGE, self.radiation.mdot_grid.grid)
             plt.show()
-            if self.radiation_class == "qsosed":
-                self.radiation.initialize_all_grids()
-                self.radiation.integrator.__init__(self.radiation)
         return self.lines
 
     def compute_line_mass_loss(self, line):

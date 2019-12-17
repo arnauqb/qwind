@@ -4,11 +4,13 @@ This module handles the radiation transfer aspects of Qwind.
 
 import numpy as np
 from scipy import integrate, interpolate, optimize
-from qwind.integration import qwind2 as integration 
+#from qwind.integration import qwind2 as integration 
+from qwind.c_functions import integration
 from numba import njit
 from qsosed import sed
 from qwind import grid
-from skimage.draw import line
+from qwind.c_functions.wrapper import line_coordinates
+from qwind.c_functions.wrapper import tau_uv as tau_uv_c
 
 import qwind.constants as const
 # interpolation values for force multiplier #
@@ -105,7 +107,12 @@ class Radiation:
 
         # Interpolation grids #
         self.initialize_all_grids(first_iter=True)
-        self.integrator = integration.Integrator(self)
+        #if "tau_uv_integrand" in self.wind.modes:
+        #    self.integrator = integration.Integrator(self, tau_uv_integrand = True )
+        #else:
+        #    self.integrator = integration.Integrator(self, tau_uv_integrand = False)
+        self.integrator = integration.Integrator(self.wind.RG, grid.DENSITY_GRID, grid.GRID_R_RANGE, grid.GRID_Z_RANGE, grid.MDOT_GRID, grid.UV_FRACTION_GRID, grid.GRID_1D_RANGE, epsrel=1e-1, epsabs=0)
+
         
 
     def compute_mass_accretion_rate_grid(self, lines):
@@ -160,21 +167,7 @@ class Radiation:
             UV optical depth at point (r,z) 
         """
         if "uv_interp" in self.wind.modes:
-            #grid_r_range = grid.GRID_R_RANGE 
-            #grid_z_range = grid.GRID_Z_RANGE 
-            #density_grid = grid.DENSITY_GRID 
-            #line_element = np.sqrt(r**2 + z**2) * self.wind.RG * const.SIGMA_T
-            #tau_uv_int = integrate.quad(self._optical_depth_uv_integrand,
-            #                            a=0,
-            #                            b=1,
-            #                            args=(r, z, grid_r_range, grid_z_range, density_grid),
-            #                            epsabs=0,
-            #                            epsrel=1e-2)[0]
-            #return tau_uv_int * line_element
-            dtau_grid = self.density_grid.grid * const.SIGMA_T * self.wind.RG
-            r_arg, z_arg = self.density_grid.get_arg(r,z) 
-            line_coordinates = line(0,0, r_arg, z_arg)
-            tau = dtau_grid[line_coordinates].sum() / len(line_coordinates[0]) * np.sqrt(r**2 + z**2)
+            tau = tau_uv_c(r, z, self.density_grid) * const.SIGMA_T * self.wind.RG
             return tau
         else:
             delta_r_0 = abs(r_0 - self.wind.r_init)
@@ -345,10 +338,8 @@ class Radiation:
             radiation force at the point (r,z) boosted by fm and attenuated by e^tau_uv.
         """
         i_aux = self.integrator.integrate(r,
-                                          z,
-                                          self.wind.disk_r_min,
-                                          self.wind.disk_r_max,
-                                          **kwargs)
+                                          z)
+                                          
         error = i_aux[2:4]
         self.int_error_hist.append(error)
         self.int_hist.append(i_aux)
@@ -358,7 +349,7 @@ class Radiation:
             cos_theta = r / d
             tau_uv = tau_uv * np.array([cos_theta, 0, sin_theta])
             abs_uv = np.exp(-tau_uv)
-        elif no_tau_uv == True:
+        elif (no_tau_uv == True) or ("tau_uv_integrand" in self.wind.modes):
             abs_uv = 1
         else:
             abs_uv = np.exp(-tau_uv)

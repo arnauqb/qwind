@@ -75,8 +75,8 @@ class Plotter:
                 self.wind.radiation.tau_x_grid]
         for line in self.wind.lines:
             ax[0].plot(line.r_hist, line.z_hist)
-        ax[0].set_xlim(0,2000)
-        ax[0].set_ylim(0,500)
+        ax[0].set_xlim(0,3000)
+        ax[0].set_ylim(0,3000)
         ax[0].set_xlabel("R [Rg]")
         ax[0].set_xlabel("z [Rg]")
 

@@ -8,9 +8,10 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 from skimage.draw import line_aa as compute_line_coordinates
 import cmocean.cm as colormaps
+from qwind.c_functions import wrapper
 
-N_R = 500
-N_Z = 501
+N_R = 100
+N_Z = 101
 N_1D_GRID = 500
 R_MAX_DEFAULT = 3000
 Z_MAX_DEFAULT = 3000 
@@ -213,14 +214,19 @@ class OpticalDepthXrayGrid(Grid):
         #res, error = pyquad.quad_grid(optical_depth_x_integrand, 0, 1, self.rz_grid, epsabs=0, epsrel=1e-8, cache=False, parallel=True)
         #res= res.reshape(len(GRID_Z_RANGE), len(GRID_R_RANGE)).T * self.Rg
         #self.grid = res
-        self.dtau_grid = density_grid.grid * _opacity_xray_array(ionization_grid.grid) * self.Rg
-        tau_grid = []
-        for value in self.rz_grid:
-            r_arg, z_arg = self.get_arg(*value)
-            rr, zz, val = compute_line_coordinates(0, 0, r_arg, z_arg)
-            tau = (val * self.dtau_grid[rr,zz]).sum() / len(rr) * np.sqrt(value[0]**2 + value[1]**2)
-            tau_grid.append(tau)
-        self.grid = np.array(tau_grid).reshape(len(GRID_R_RANGE), len(GRID_Z_RANGE))
+        #self.dtau_grid = density_grid.grid * _opacity_xray_array(ionization_grid.grid) * self.Rg
+        #tau_grid = []
+        #for value in self.rz_grid:
+        #    r_arg, z_arg = self.get_arg(*value)
+        #    rr, zz, val = compute_line_coordinates(0, 0, r_arg, z_arg)
+        #    #print(r_arg, z_arg)
+        #    #print("###")
+        #    #print(rr, zz)
+        #    #print("\n")
+        #    tau = (val * self.dtau_grid[rr,zz]).sum() / len(rr) * np.sqrt(value[0]**2 + value[1]**2)
+        #    tau_grid.append(tau)
+        #self.grid = np.array(tau_grid).reshape(len(GRID_R_RANGE), len(GRID_Z_RANGE))
+        self.grid = wrapper.update_tau_x_grid(density_grid.grid, ionization_grid.grid, GRID_R_RANGE, GRID_Z_RANGE) * self.Rg * const.SIGMA_T
 
         
 class IonizationParameterGrid(Grid):

@@ -12,15 +12,18 @@ from scipy import LowLevelCallable
 from scipy.integrate import quad
 from qwind import grid
 from qwind import constants as const
+from qwind.c_functions import wrapper
 RG = 0. 
 #UV_FRACTION_GRID_RANGE = np.ones(500)
 GRID_1D_RANGE = grid.GRID_1D_RANGE 
 MDOT_GRID = grid.MDOT_GRID
 UV_FRACTION_GRID = grid.UV_FRACTION_GRID 
 #MDOT_GRID_RANGE = np.linspace(6, 1600, 500)
-#DENSITY_GRID = np.zeros((500,500)) 
+DENSITY_GRID = grid.DENSITY_GRID 
 GRID_R_RANGE = grid.GRID_R_RANGE
-#GRID_Z_RANGE = grid.GRID_Z_RANGE
+GRID_Z_RANGE = grid.GRID_Z_RANGE
+N_R = grid.N_R
+N_Z = grid.N_Z
 #mdot_grid = MDOT_GRID
 
 def jit_integrand(integrand_function):
@@ -123,24 +126,7 @@ def get_uv_fraction_value(r_d):
     uv_fraction = UV_FRACTION_GRID[rd_arg]
     return uv_fraction 
 
-@njit
-def optical_depth_uv_integrand(t_range, r_d, phi_d, r, z):
-    x = r_d * np.cos(phi_d) + t_range * (r - r_d * np.cos(phi_d))
-    y = r_d * np.sin(phi_d) + t_range * (- r_d * np.sin(phi_d))
-    z = t_range * z
-    r = np.sqrt(x**2 + y**2)
-    #r_arg = np.searchsorted(grid_r_range, r, side="left")
-    #z_arg = np.searchsorted(grid_z_range, z, side="left")
-    #density_values = []
-    #for i in range(0,len(r_arg)):
-    #    dvalue = grid[r_arg[i], z_arg[i]]
-    #    density_values.append(dvalue)
-    density_values = get_density_value(r,z)
-    dtau = const.SIGMA_T * np.array(density_values) #np.array(density_values) 
-    return dtau
-
-
-@njit
+#@njit
 def optical_depth_uv(r_d, phi_d, r, z):
     """
     UV optical depth.
@@ -152,11 +138,12 @@ def optical_depth_uv(r_d, phi_d, r, z):
     Returns:
         UV optical depth at point (r,z) 
     """
-    line_element = np.sqrt(r**2 + r_d**2 + z**2 - 2 * r * r_d * np.cos(phi_d))
-    t_range = np.linspace(0,1)
-    int_values = optical_depth_uv_integrand(t_range, r_d, phi_d, r, z)
-    tau_uv_int = np.trapz(x=t_range, y=int_values)
-    tau_uv = tau_uv_int * line_element * RG
+    #line_element = np.sqrt(r**2 + r_d**2 + z**2 - 2 * r * r_d * np.cos(phi_d))
+    #t_range = np.linspace(0,1)
+    #int_values = optical_depth_uv_integrand(t_range, r_d, phi_d, r, z)
+    #tau_uv_int = np.trapz(x=t_range, y=int_values)
+    #tau_uv = tau_uv_int * line_element * RG
+    tau_uv = wrapper.tau_uv_disk_blob(r_d, phi_d, r, z, DENSITY_GRID, GRID_R_RANGE, GRID_Z_RANGE) * const.SIGMA_T * RG
     return tau_uv
 
 
@@ -174,13 +161,13 @@ def _integrate_r_kernel(phi_d, r_d, r, z):
         Radial integral kernel.
 
     """
-    tau_uv = optical_depth_uv(r_d, phi_d, r, z)
-    abs_uv = np.exp(-tau_uv)
+    #tau_uv = wrapper.use_tau_uv_disk_blob(r_d, phi_d, r, z, DENSITY_GRID.ravel(), GRID_R_RANGE, GRID_Z_RANGE, N_R, N_Z)   #optical_depth_uv(r_d, phi_d, r, z)
     mdot = get_mdot_value(r_d)
+    uv_fraction = get_uv_fraction_value(r_d)
     ff0 = nt_rel_factors(r_d) / r_d**2.
     delta = r**2. + r_d**2. + z**2. - 2.*r*r_d * np.cos(phi_d)
     cos_gamma = (r - r_d*np.cos(phi_d)) / delta**2.
-    ff = ff0 * cos_gamma * abs_uv * mdot
+    ff = ff0 * cos_gamma * mdot * uv_fraction #* np.exp(-tau_uv)
     return ff
 
 def _integrate_z_kernel(phi_d, r_d, r, z):
@@ -197,12 +184,13 @@ def _integrate_z_kernel(phi_d, r_d, r, z):
         Z integral kernel.
 
     """
+    #tau_uv = optical_depth_uv(r_d, phi_d, r, z)
     mdot = get_mdot_value(r_d)
-    tau_uv = optical_depth_uv(r_d, phi_d, r, z)
-    abs_uv = np.exp(-tau_uv)
+    uv_fraction = get_uv_fraction_value(r_d)
     ff0 = nt_rel_factors(r_d) / r_d**2.
+    #ff0 = ( 1 - np.sqrt(6/r_d)) / r_d**2
     delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
-    ff = ff0 * 1. / delta**2. * abs_uv * mdot
+    ff = ff0 * 1. / delta**2. * mdot * uv_fraction #* np.exp(-tau_uv)
     return ff
 
 def _integrate_r_kernel_notau(phi_d, r_d, r, z):
@@ -219,9 +207,10 @@ def _integrate_r_kernel_notau(phi_d, r_d, r, z):
         Radial integral kernel.
 
     """
-    mdot = get_mdot_value(r_d)
-    uv_fraction = get_uv_fraction_value(r_d)
-    ff0 = nt_rel_factors(r_d) / r_d**2.
+    mdot = 1#get_mdot_value(r_d)
+    uv_fraction = 1#get_uv_fraction_value(r_d)
+    #ff0 = nt_rel_factors(r_d) / r_d**2.
+    ff0 = ( 1 - np.sqrt(6/r_d)) / r_d**2
     delta = r**2. + r_d**2. + z**2. - 2.*r*r_d * np.cos(phi_d)
     cos_gamma = (r - r_d*np.cos(phi_d)) / delta**2.
     ff = ff0 * cos_gamma * mdot * uv_fraction
@@ -241,37 +230,40 @@ def _integrate_z_kernel_notau(phi_d, r_d, r, z):
         Z integral kernel.
 
     """
-    mdot = get_mdot_value(r_d)
-    uv_fraction = get_uv_fraction_value(r_d)
-    ff0 = nt_rel_factors(r_d) / r_d**2.
+    mdot = 1#get_mdot_value(r_d)
+    uv_fraction = 1#get_uv_fraction_value(r_d)
+    #ff0 = nt_rel_factors(r_d) / r_d**2.
+    ff0 = ( 1 - np.sqrt(6/r_d)) / r_d**2
     delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
     ff = ff0 * 1. / delta**2. * mdot * uv_fraction
     return ff
 
 
 class Integrator:
-    def __init__(self, radiation, notau=True):
+    def __init__(self, radiation, tau_uv_integrand=False):
 
         self.radiation = radiation
         global RG
         RG = self.radiation.wind.RG
-
-        if notau:
-            global UV_FRACTION_GRID
-            UV_FRACTION_GRID = self.radiation.uv_fraction_grid.grid
-            global MDOT_GRID
-            MDOT_GRID = self.radiation.mdot_grid.grid
-            get_mdot_value.recompile()
-            get_uv_fraction_value.recompile()
+        global DENSITY_GRID
+        DENSITY_GRID = self.radiation.density_grid.grid
+        global UV_FRACTION_GRID
+        UV_FRACTION_GRID = self.radiation.uv_fraction_grid.grid
+        global MDOT_GRID
+        MDOT_GRID = self.radiation.mdot_grid.grid
+        get_mdot_value.recompile()
+        get_uv_fraction_value.recompile()
+        if not tau_uv_integrand:
             self._integrate_z = jit_integrand(_integrate_z_kernel_notau)
             self._integrate_r = jit_integrand(_integrate_r_kernel_notau)
             #self._integrate_z = _integrate_z_kernel_notau
             #self._integrate_r = _integrate_r_kernel_notau
         else:
-            optical_depth_uv_integrand.recompile()
-            optical_depth_uv.recompile()
+            #optical_depth_uv.recompile()
             self._integrate_z = jit_integrand(_integrate_z_kernel)
             self._integrate_r = jit_integrand(_integrate_r_kernel)
+            #self._integrate_z = _integrate_z_kernel
+            #self._integrate_r = _integrate_r_kernel
 
     def integrate(self, r, z, disk_r_min=6, disk_r_max=1600, epsabs=0, epsrel=1e-4):
         """
@@ -291,8 +283,6 @@ class Integrator:
                 2: error of the radial integral.
                 3: error of the z integral
         """
-	
- 
         r_int, r_error = scipy.integrate.nquad(
             self._integrate_r, ((
                 0, np.pi), (disk_r_min, disk_r_max)),
