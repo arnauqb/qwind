@@ -59,7 +59,7 @@ class Plotter:
     def plot_tau_x_grid(self):
         grid = self.wind.radiation.tau_x_grid
         fig, ax = plt.subplots()
-        cm = ax.pcolormesh(grid_module.GRID_R_RANGE, grid_module.GRID_Z_RANGE, grid.grid.T, norm=LogNorm(), cmap=colormaps.tempo)
+        cm = ax.pcolormesh(grid_module.GRID_R_RANGE, grid_module.GRID_Z_RANGE, grid.grid.T, norm=LogNorm(), cmap=colormaps.balance)
         #cs = ax.contour(grid_module.GRID_R_RANGE, grid_module.GRID_Z_RANGE, grid.grid.T, levels=[1e-2, 1e-1, 1e0, 1e1])
         #ax.clabel(cs, inline=1)
         plt.colorbar(cm, ax=ax)

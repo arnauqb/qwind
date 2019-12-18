@@ -2,6 +2,8 @@
 #include <math.h>
 #include <stdlib.h>
 #include "grid_utils.c"
+#include "disk.c"
+#include <gsl/gsl_integration.h>
 #define SIGMA_T 6.6524587158e-25
 //#define N_R 1000
 //#define N_Z 1001
@@ -9,6 +11,12 @@
 size_t N_R;
 size_t N_DISK;
 size_t N_Z;
+size_t n_eval;
+double RG;
+double ASTAR = 0;
+double ISCO = 6;
+double EPSABS = 0;
+double EPSREL = 1e-4;
 
 double *GRID_R_RANGE;
 double *GRID_Z_RANGE;
@@ -18,11 +26,287 @@ double *GRID_DISK_RANGE;
 double *MDOT_GRID;
 double *UV_FRACTION_GRID;
 
-void initialize_arrays(double *grid_r_range, double *grid_z_range, double *density_grid, double *mdot_grid, double *uv_fraction_grid, double *grid_disk_range, size_t n_r, size_t n_z, size_t n_disk)
+typedef struct parameters{
+    double r;
+    double z;
+    double r_d_gsl;
+} parameters;
+
+parameters PARAMS;
+
+//gsl_integration_workspace *w = NULL;//
+//gsl_integration_workspace *w2 = NULL;//
+//gsl_integration_workspace *w3 = NULL;//
+//gsl_integration_workspace *w4 = NULL;//
+
+gsl_integration_cquad_workspace *w = NULL;//
+gsl_integration_cquad_workspace *w2 = NULL;//
+gsl_integration_cquad_workspace *w3 = NULL;//
+gsl_integration_cquad_workspace *w4 = NULL;//
+
+gsl_function *gsl_integrate_z_phi_d = NULL; 
+gsl_function *gsl_integrate_z_r_d = NULL; 
+gsl_function *gsl_integrate_r_phi_d = NULL; 
+gsl_function *gsl_integrate_r_r_d = NULL; 
+
+
+gsl_function *gsl_integrate_notau_z_phi_d = NULL; 
+gsl_function *gsl_integrate_notau_z_r_d = NULL; 
+gsl_function *gsl_integrate_notau_r_phi_d = NULL; 
+gsl_function *gsl_integrate_notau_r_r_d = NULL; 
+//parameters params;
+//gsl_function gsl_integrand_z_phi_d;
+//gsl_integrand_z_phi_d.function = &integrand_z_phi_d;
+//gsl_integrand_z_phi_d.params = &params;
+//
+double integrate_z_phi_d(double phi_d, void *params)
+{
+    // read all data
+    //parameters params_gsl = *(parameters *)params;
+    double integrand_value = 0;
+    double r_d;
+    double r, z;
+    int r_arg;
+    double delta, tau_uv, mdot, uv_fraction;
+    r = PARAMS.r;
+    z = PARAMS.z;
+    r_d = PARAMS.r_d_gsl;
+    //density_grid = params.density_grid
+    r_arg = get_arg(r_d, GRID_DISK_RANGE, N_DISK, GRID_DISK_RANGE[0], GRID_DISK_RANGE[N_R-1]); 
+    mdot = MDOT_GRID[r_arg];
+    uv_fraction = UV_FRACTION_GRID[r_arg];
+    tau_uv = tau_uv_disk_blob(r_d, phi_d, r, z, DENSITY_GRID, GRID_R_RANGE, GRID_Z_RANGE, N_R, N_Z) * SIGMA_T * RG;
+    delta = pow(r,2.) + pow(z,2.) + pow(r_d,2.) - 2 * r * r_d * cos(phi_d);
+    integrand_value = uv_fraction * mdot * exp(-tau_uv) / pow(delta,2.);
+    return integrand_value;
+}
+double integrate_z_r_d(double r_d , void *params)
+{
+    double result, error;
+    PARAMS.r_d_gsl = r_d;
+    gsl_integration_cquad(gsl_integrate_z_phi_d, 0., M_PI, 0, EPSREL, w, &result, &error, &n_eval);
+    //gsl_integration_qng(gsl_integrate_z_phi_d, 0., M_PI, 0, 1e-1, &result, &error, &n_eval);
+    //gsl_integration_qag(gsl_integrate_z_phi_d, 0., M_PI, 0, EPSREL, 1000, 1,w, &result, &error);
+    //gsl_integration_romberg(gsl_integrate_z_phi_d, 0, M_PI, 0, EPSREL, &result,  &n_eval, w);
+    //double rel = ( 1. - sqrt(6./r_d));
+    double rel = nt_rel_factors(r_d, ASTAR, ISCO);
+    result = result * rel / pow(r_d, 2.);
+    return result;
+}
+double integrate_z(double r, double z)
+{
+    PARAMS.r = r;
+    PARAMS.z = z;
+    double result, error;
+    gsl_integration_cquad(gsl_integrate_z_r_d, 6., 1600., 0, EPSREL, w2, &result, &error, &n_eval);
+    //gsl_integration_qng(gsl_integrate_z_r_d, 6., 1600., 0, 1e-1, &result, &error, &n_eval);
+    //gsl_integration_qag(gsl_integrate_z_r_d, 6, 1600., 0, EPSREL, 1000, 1, w2, &result, &error);
+    //gsl_integration_romberg(gsl_integrate_z_r_d, 6, 1600., 0, EPSREL, &result,  &n_eval, w2);
+    result = 2. * pow(z,2.) * result;
+    return result;
+}
+///////////////////////
+
+double integrate_r_phi_d(double phi_d, void *params)
+{
+    // read all data
+    //parameters params_gsl = *(parameters *)params;
+    double integrand_value = 0;
+    double r_d;
+    double r, z, cos_gamma;
+    double delta, tau_uv, mdot, uv_fraction;
+    int r_arg;
+    r = PARAMS.r;
+    z = PARAMS.z;
+    r_d = PARAMS.r_d_gsl;
+    r_arg = get_arg(r_d, GRID_DISK_RANGE, N_DISK, GRID_DISK_RANGE[0], GRID_DISK_RANGE[N_R-1]); 
+    mdot = MDOT_GRID[r_arg];
+    uv_fraction = UV_FRACTION_GRID[r_arg];
+    cos_gamma = r - r_d * cos(phi_d);
+    tau_uv = tau_uv_disk_blob(r_d, phi_d, r, z, DENSITY_GRID, GRID_R_RANGE, GRID_Z_RANGE, N_R, N_Z) * SIGMA_T * RG;
+    delta = pow(r,2.) + pow(z,2.) + pow(r_d,2.) - 2 * r * r_d * cos(phi_d);
+    integrand_value = mdot * uv_fraction * cos_gamma * exp(-tau_uv) / pow(delta,2.);
+    return integrand_value;
+}
+double integrate_r_r_d(double r_d , void *params)
+{
+    double result, error;
+    PARAMS.r_d_gsl = r_d;
+    gsl_integration_cquad(gsl_integrate_r_phi_d, 0., M_PI, 0, EPSREL, w3, &result, &error, &n_eval);
+    //gsl_integration_qng(gsl_integrate_r_phi_d, 0., M_PI, 0, 1e-1, &result, &error, &n_eval);
+    //gsl_integration_qag(gsl_integrate_r_phi_d, 0., M_PI, 0, EPSREL, 1000, 1, w3, &result, &error);
+    //gsl_integration_romberg(gsl_integrate_r_phi_d, 0, M_PI, 0, EPSREL, &result,  &n_eval, w3);
+    //double rel =  ( 1. - sqrt(6./r_d));
+    double rel = nt_rel_factors(r_d, ASTAR, ISCO);
+    result = result * rel / pow(r_d, 2.);
+    //printf("%e\n", result);
+    return result;
+}
+double integrate_r(double r, double z)
+{
+    PARAMS.r = r;
+    PARAMS.z = z;
+    double result, error;
+    gsl_integration_cquad(gsl_integrate_r_r_d, 6., 1600., 0, EPSREL, w4, &result, &error, &n_eval);
+    //gsl_integration_qng(gsl_integrate_r_r_d, 6., 1600., 0, 1e-1, &result, &error, &n_eval);
+    //gsl_integration_qag(gsl_integrate_r_r_d, 6, 1600., 0, EPSREL, 1000, 1, w4, &result, &error);
+    //gsl_integration_romberg(gsl_integrate_r_r_d, 6, 1600, 0, EPSREL, &result,  &n_eval, w4);
+    result = 2. * z * result;
+    return result;
+}
+
+
+/* NO TAU UV section */
+double integrate_notau_z_phi_d(double phi_d, void *params)
+{
+    // read all data
+    //parameters params_gsl = *(parameters *)params;
+    double integrand_value = 0;
+    double r_d;
+    double r, z;
+    int r_arg;
+    double delta, mdot, uv_fraction;
+    r = PARAMS.r;
+    z = PARAMS.z;
+    r_d = PARAMS.r_d_gsl;
+    r_arg = get_arg(r_d, GRID_DISK_RANGE, N_DISK, GRID_DISK_RANGE[0], GRID_DISK_RANGE[N_R-1]); 
+    mdot = MDOT_GRID[r_arg];
+    uv_fraction = UV_FRACTION_GRID[r_arg];
+    delta = pow(r,2.) + pow(z,2.) + pow(r_d,2.) - 2 * r * r_d * cos(phi_d);
+    integrand_value = uv_fraction * mdot / pow(delta,2.);
+    return integrand_value;
+}
+double integrate_notau_z_r_d(double r_d, void *params)
+{
+    double result, error;
+    PARAMS.r_d_gsl = r_d;
+    gsl_integration_cquad(gsl_integrate_notau_z_phi_d, 0., M_PI, 0, EPSREL, w, &result, &error, &n_eval);
+    //gsl_integration_qng(gsl_integrate_z_phi_d, 0., M_PI, 0, 1e-1, &result, &error, &n_eval);
+    //gsl_integration_qag(gsl_integrate_z_phi_d, 0., M_PI, 0, EPSREL, 1000, 1,w, &result, &error);
+    //gsl_integration_romberg(gsl_integrate_z_phi_d, 0, M_PI, 0, EPSREL, &result,  &n_eval, w);
+    //double rel =  ( 1. - sqrt(6./r_d));
+    double rel = nt_rel_factors(r_d, ASTAR, ISCO);
+    result = result *  rel / pow(r_d, 2.);
+    return result;
+}
+double integrate_notau_z(double r, double z)
+{
+    PARAMS.r = r;
+    PARAMS.z = z;
+    double result, error;
+    gsl_integration_cquad(gsl_integrate_notau_z_r_d, 6., 1600., 0, EPSREL, w2, &result, &error, &n_eval);
+    //gsl_integration_qng(gsl_integrate_z_r_d, 6., 1600., 0, 1e-1, &result, &error, &n_eval);
+    //gsl_integration_qag(gsl_integrate_z_r_d, 6, 1600., 0, EPSREL, 1000, 1, w2, &result, &error);
+    //gsl_integration_romberg(gsl_integrate_z_r_d, 6, 1600., 0, EPSREL, &result,  &n_eval, w2);
+    result = 2. * pow(z,2.) * result;
+    return result;
+}
+///////////////////////
+
+double integrate_notau_r_phi_d(double phi_d, void *params)
+{
+    // read all data
+    //parameters params_gsl = *(parameters *)params;
+    double integrand_value = 0;
+    double r_d;
+    double r, z, cos_gamma;
+    double delta, mdot, uv_fraction;
+    int r_arg;
+    r = PARAMS.r;
+    z = PARAMS.z;
+    r_d = PARAMS.r_d_gsl;
+    r_arg = get_arg(r_d, GRID_DISK_RANGE, N_DISK, GRID_DISK_RANGE[0], GRID_DISK_RANGE[N_R-1]); 
+    mdot = MDOT_GRID[r_arg];
+    uv_fraction = UV_FRACTION_GRID[r_arg];
+    cos_gamma = r - r_d * cos(phi_d);
+    delta = pow(r,2.) + pow(z,2.) + pow(r_d,2.) - 2 * r * r_d * cos(phi_d);
+    integrand_value = mdot * uv_fraction * cos_gamma / pow(delta,2.);
+    return integrand_value;
+}
+double integrate_notau_r_r_d(double r_d , void *params)
+{
+    double result, error;
+    PARAMS.r_d_gsl = r_d;
+    gsl_integration_cquad(gsl_integrate_notau_r_phi_d, 0., M_PI, 0, EPSREL, w3, &result, &error, &n_eval);
+    //gsl_integration_qng(gsl_integrate_r_phi_d, 0., M_PI, 0, 1e-1, &result, &error, &n_eval);
+    //gsl_integration_qag(gsl_integrate_r_phi_d, 0., M_PI, 0, EPSREL, 1000, 1, w3, &result, &error);
+    //gsl_integration_romberg(gsl_integrate_r_phi_d, 0, M_PI, 0, EPSREL, &result,  &n_eval, w3);
+    //double rel =  ( 1. - sqrt(6./r_d));
+    double rel = nt_rel_factors(r_d, ASTAR, ISCO);
+    result = result *  rel / pow(r_d, 2.);
+    //printf("%e\n", result);
+    return result;
+}
+double integrate_notau_r(double r, double z)
+{
+    PARAMS.r = r;
+    PARAMS.z = z;
+    double result, error;
+    gsl_integration_cquad(gsl_integrate_notau_r_r_d, 6., 1600., 0, EPSREL, w4, &result, &error, &n_eval);
+    //gsl_integration_qng(gsl_integrate_r_r_d, 6., 1600., 0, 1e-1, &result, &error, &n_eval);
+    //gsl_integration_qag(gsl_integrate_r_r_d, 6, 1600., 0, EPSREL, 1000, 1, w4, &result, &error);
+    //gsl_integration_romberg(gsl_integrate_r_r_d, 6, 1600, 0, EPSREL, &result,  &n_eval, w4);
+    result = 2. * z * result;
+    return result;
+}
+
+
+void initialize_integrators()
+{
+    n_eval=50;
+    gsl_integrate_z_phi_d = malloc(sizeof(gsl_function));
+    gsl_integrate_z_phi_d->function = &integrate_z_phi_d;
+    gsl_integrate_z_phi_d->params = NULL;
+    w = gsl_integration_cquad_workspace_alloc(n_eval);
+    //w = gsl_integration_workspace_alloc(1000); 
+    //w = gsl_integration_romberg_alloc(n_eval);
+
+    gsl_integrate_z_r_d = malloc(sizeof(gsl_function));
+    gsl_integrate_z_r_d->function = &integrate_z_r_d;
+    gsl_integrate_z_r_d->params = NULL;
+    w2 = gsl_integration_cquad_workspace_alloc(n_eval);
+    //w2 = gsl_integration_workspace_alloc(1000); 
+    //w2 = gsl_integration_romberg_alloc(n_eval);
+
+    gsl_integrate_r_phi_d = malloc(sizeof(gsl_function));
+    gsl_integrate_r_phi_d->function = &integrate_r_phi_d;
+    gsl_integrate_r_phi_d->params = NULL;
+    w3 = gsl_integration_cquad_workspace_alloc(n_eval);
+    //w3 = gsl_integration_workspace_alloc(1000); 
+    //w3 = gsl_integration_romberg_alloc(n_eval);
+
+    gsl_integrate_r_r_d = malloc(sizeof(gsl_function));
+    gsl_integrate_r_r_d->function = &integrate_r_r_d;
+    gsl_integrate_r_r_d->params = NULL;
+    w4 = gsl_integration_cquad_workspace_alloc(n_eval);
+    //w4 = gsl_integration_workspace_alloc(1000); 
+    //w4 = gsl_integration_romberg_alloc(n_eval);
+
+    gsl_integrate_notau_z_phi_d = malloc(sizeof(gsl_function));
+    gsl_integrate_notau_z_phi_d->function = &integrate_notau_z_phi_d;
+    gsl_integrate_notau_z_phi_d->params = NULL;
+
+    gsl_integrate_notau_z_r_d = malloc(sizeof(gsl_function));
+    gsl_integrate_notau_z_r_d->function = &integrate_notau_z_r_d;
+    gsl_integrate_notau_z_r_d->params = NULL;
+
+    gsl_integrate_notau_r_phi_d = malloc(sizeof(gsl_function));
+    gsl_integrate_notau_r_phi_d->function = &integrate_notau_r_phi_d;
+    gsl_integrate_notau_r_phi_d->params = NULL;
+
+    gsl_integrate_notau_r_r_d = malloc(sizeof(gsl_function));
+    gsl_integrate_notau_r_r_d->function = &integrate_notau_r_r_d;
+    gsl_integrate_notau_r_r_d->params = NULL;
+
+}
+
+void initialize_arrays(double *grid_r_range, double *grid_z_range, double *density_grid, double *mdot_grid, double *uv_fraction_grid, double *grid_disk_range, size_t n_r, size_t n_z, size_t n_disk, double Rg, double epsrel)
 {
     N_R = n_r;
     N_Z = n_z;
     N_DISK = n_disk;
+    RG = Rg;
+    EPSREL = epsrel;
     GRID_R_RANGE = malloc(n_r * sizeof(double));
     for (int i=0; i < n_r; i++)
     {
@@ -56,12 +340,6 @@ void initialize_arrays(double *grid_r_range, double *grid_z_range, double *densi
     }
 }
 
-typedef struct parameters{
-    double r;
-    double z;
-    double Rg;
-} parameters;
-
 double integrand_r(int n, double *x, void *user_data)
 {
     // read all data
@@ -69,9 +347,8 @@ double integrand_r(int n, double *x, void *user_data)
     double integrand_value = 0;
     double r_d, phi_d;
     double r, z;
-    double delta, tau_uv, mdot, uv_fraction;
+    double delta, tau_uv;
     //double *density_grid;
-    double Rg = params.Rg;
     double cos_gamma;
     r_d = x[0];
     phi_d = x[1];
@@ -79,9 +356,9 @@ double integrand_r(int n, double *x, void *user_data)
     z = params.z;
     //density_grid = params.density_grid;
     cos_gamma = r - r_d * cos(phi_d);
-    tau_uv = tau_uv_disk_blob(r_d, phi_d, r, z, DENSITY_GRID, GRID_R_RANGE, GRID_Z_RANGE, N_R, N_Z) * SIGMA_T * Rg;
+    tau_uv = tau_uv_disk_blob(r_d, phi_d, r, z, DENSITY_GRID, GRID_R_RANGE, GRID_Z_RANGE, N_R, N_Z) * SIGMA_T * RG;
     delta = pow(r,2.) + pow(z,2.) + pow(r_d,2.) - 2 * r * r_d * cos(phi_d);
-    integrand_value = ( 1. - sqrt(6./r_d)) / pow(r_d, 2.) / pow(delta,2.) * exp(-tau_uv) * cos_gamma;
+    integrand_value = nt_rel_factors(r_d, ASTAR, ISCO) / pow(r_d, 2.) / pow(delta,2.) * exp(-tau_uv) * cos_gamma;
     return integrand_value;
 }
 
@@ -92,20 +369,18 @@ double integrand_z(int n, double *x, void *user_data)
     double integrand_value = 0;
     double r_d, phi_d;
     double r, z;
-    double delta, tau_uv, mdot, uv_fraction;
+    double delta, tau_uv;
     //double *density_grid;
-    double Rg = params.Rg;
     r_d = x[0];
     phi_d = x[1];
     r = params.r;
     z = params.z;
     //density_grid = params.density_grid;
-    tau_uv = tau_uv_disk_blob(r_d, phi_d, r, z, DENSITY_GRID, GRID_R_RANGE, GRID_Z_RANGE, N_R, N_Z) * SIGMA_T * Rg;
+    tau_uv = tau_uv_disk_blob(r_d, phi_d, r, z, DENSITY_GRID, GRID_R_RANGE, GRID_Z_RANGE, N_R, N_Z) * SIGMA_T * RG;
     delta = pow(r,2.) + pow(z,2.) + pow(r_d,2.) - 2 * r * r_d * cos(phi_d);
-    integrand_value = ( 1. - sqrt(6./r_d)) / pow(r_d, 2.) / pow(delta,2.) * exp(-tau_uv);
+    integrand_value = nt_rel_factors(r_d, ASTAR,ISCO) / pow(r_d, 2.) / pow(delta,2.) * exp(-tau_uv);
     return integrand_value;
 }
-
 
 int main()
 {
@@ -115,7 +390,7 @@ int main()
     double *mdot_grid= malloc(10 * sizeof(double));
     double *uv_fraction_grid = malloc(10 * sizeof(double));
     double *grid_disk_range = malloc( 10 * sizeof(double));
-    parameters param_int;
+    //parameters param_int;
     ////double *density_grid = malloc(100 * sizeof(double));
     for (int i=0; i<100; i++)
     {
@@ -125,22 +400,33 @@ int main()
     {
         grid_r_range[i] = 10*i;
         grid_z_range[i] = 10*i;
-        mdot_grid[i] = 0.5;
-        uv_fraction_grid[i] = 0.9;
+        mdot_grid[i] = 1.;
+        uv_fraction_grid[i] = 1.;
         grid_disk_range[i] = 10*i;
     }
 
-    initialize_arrays(grid_r_range, grid_z_range, density_grid, mdot_grid, uv_fraction_grid, grid_disk_range, 10, 10, 10);
-    param_int.r = 100.;
-    param_int.z = 50.;
-    ////param_int.density_grid = density_grid;
-    param_int.Rg = 1e14;
-    double result;
-    double x[2];
-    x[0] = 20;
-    x[1] = 0;
-    result = integrand_z(2, x, &param_int);
-    printf("%e\n", result);
+    initialize_arrays(grid_r_range, grid_z_range, density_grid, mdot_grid, uv_fraction_grid, grid_disk_range, 10, 10, 10, 1e14, 1e-4);
+    initialize_integrators();
+    //param_int.r = 100.;
+    //param_int.z = 50.;
+    //////param_int.density_grid = density_grid;
+    //param_int.Rg = 1e14;
+    //double result;
+    //double x[2];
+    //x[0] = 20;
+    //x[1] = 0;
+    //result = integrand_z(2, x, &param_int);
+    //printf("%e\n", result);
+    double result, result2;
+    result = integrate_z(50, 100);
+    result2 = integrate_r(50, 100);
+    printf("%e\n",result2);
+    printf("%e\n",result);
+    printf("no tau:\n");
+    result = integrate_notau_z(50, 100);
+    result2 = integrate_notau_r(50, 100);
+    printf("%e\n",result2);
+    printf("%e\n",result);
     return 0;
 }
 

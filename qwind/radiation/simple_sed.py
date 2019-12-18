@@ -25,7 +25,7 @@ class Radiation:
         self.xray_luminosity = self.wind.mdot * \
             self.wind.eddington_luminosity * self.xray_fraction
         self.r_x = self.ionization_radius()
-        self.FORCE_RADIATION_CONSTANT = 3. / \
+        self.FORCE_RADIATION_CONSTANT = 3. * self.wind.mdot / \
             (8. * np.pi * self.wind.eta) * self.uv_fraction
         self.int_hist = []
         self.int_error_hist = []

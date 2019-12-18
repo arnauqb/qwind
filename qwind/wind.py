@@ -48,6 +48,7 @@ class Qwind:
                  solver="ida",
                  iterations = 1,
                  refresh_grids = True,
+                 log_spaced = False,
                  n_cpus=1):
         """
         Parameters
@@ -156,6 +157,7 @@ class Qwind:
                 #integration.grid = self.density_grid
 
         self.plotter = Plotter(self)
+        self.first_iter = True
         #if radiation_class == "qsosed":
         #    self.plotter.plot_all_grids()
 
@@ -307,16 +309,18 @@ class Qwind:
                 #except IDAError:
                 #    print("Terminating gracefully...")
                 #    pass
-                #if self.radiation_class == "qsosed": 
-                #    self.radiation.update_all_grids()
-                #    if show_plots:
-                #        self.plotter.plot_all_grids()
-                #        plt.show()
+            if self.radiation_class == "qsosed": 
+                self.radiation.update_all_grids()
+                if show_plots:
+                    self.plotter.plot_all_grids()
+                    plt.show()
 
             self.mdot_w, self.kinetic_luminosity, self.angle, self.v_terminal = self.compute_wind_properties()
-            self.radiation.compute_mass_accretion_rate_grid(self.lines)
-            plt.plot(grid.GRID_1D_RANGE, self.radiation.mdot_grid.grid)
-            plt.show()
+            if self.radiation_class != "simple_sed":
+                self.radiation.compute_mass_accretion_rate_grid(self.lines)
+                plt.plot(grid.GRID_1D_RANGE, grid.MDOT_GRID)
+                plt.show()
+            self.first_iter = False
         return self.lines
 
     def compute_line_mass_loss(self, line):

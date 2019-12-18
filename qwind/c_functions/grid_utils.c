@@ -2,22 +2,35 @@
 #include <math.h>
 #include <stdlib.h>
 
-int get_arg(double value, double *array, size_t n)
+int get_arg(double x, double *arr, size_t n, double l, double r)
+    /*Assumes the array is sorted.*/
 {
-    double min_value;
-    min_value = 1e8;
-    size_t min_value_arg;
-    double min_aux;
-    for (int i=0; i<n; i++)
-    {
-        min_aux = abs(array[i] - value);
-        if (min_aux < min_value)
-        {
-            min_value = min_aux;
-            min_value_arg = i;
-        }
-    }
-    return min_value_arg;
+    if (x < arr[0])
+        return 0;
+    if (x > arr[n-1])
+        return n-1;
+
+    if (r >= l) { 
+        int mid = l + (r - l) / 2; 
+        
+        // If the element is present at the middle 
+        // itself 
+        if (arr[mid] == x) 
+            return mid; 
+        
+        // If element is smaller than mid, then 
+        // it can only be present in left subarray 
+        if (arr[mid] > x) 
+            return get_arg(x, arr, n, l, mid - 1); 
+        
+        // Else the element can only be present 
+        // in right subarray 
+        return get_arg(x, arr, n, mid + 1, r); 
+    } 
+    
+    // We reach here when element is not 
+    // present in array 
+    return n-1; 
 }
 int sign(int x)
 {
@@ -106,10 +119,10 @@ double tau_uv_disk_blob(double r_d, double phi_d, double r, double z, double *de
     double tau = 0;
     int length, position; 
     line_length = sqrt(pow(r,2.) + pow(r_d,2.) + pow(z,2.) - 2 * r * r_d * cos(phi_d));
-    r_arg = get_arg(r, grid_r_range, n_r);
-    z_arg = get_arg(z, grid_z_range, n_z);
-    r_d_arg = get_arg(r_d, grid_r_range, n_r);
-    z_d_arg = get_arg(0., grid_z_range, n_z);
+    r_arg = get_arg(r, grid_r_range, n_r, grid_r_range[0], grid_r_range[n_r-1]);
+    z_arg = get_arg(z, grid_z_range, n_z, grid_z_range[0], grid_z_range[n_z-1]);
+    r_d_arg = get_arg(r_d, grid_r_range, n_r, grid_r_range[0], grid_r_range[n_r-1]);
+    z_d_arg = get_arg(0., grid_z_range, n_z, grid_z_range[0], grid_z_range[n_z-1]);
     dr = abs(r_arg - r_d_arg);
     dz = abs(z_arg - z_d_arg);
     length = fmax(dr, dz) + 1;

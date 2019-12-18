@@ -11,6 +11,7 @@ import pickle
 from assimulo.problem import Implicit_Problem
 from assimulo.solvers import IDA, Radau5DAE, ODASSL
 from assimulo.exception import TerminateSimulation
+from numba import njit
 
 
 # check backend to import appropiate progress bar #
@@ -36,6 +37,20 @@ class Escape(Exception):
 
 class Stalling(Exception):
     pass
+
+
+@njit
+def force_gravity(r, z):
+    """
+    Computes gravitational force at the current position. 
+    
+    Returns:
+        grav: graviational force per unit mass in units of c^2 / Rg.
+    """
+    d = np.sqrt(r**2 + z**2)
+    array = np.array([r / d, z / d])
+    grav = - 1. / (d**2) * array
+    return grav
 
 class streamline():
     """
@@ -145,46 +160,55 @@ class streamline():
         self.xi = self.radiation.ionization_parameter(
             self.r, self.z, self.tau_x, self.wind.rho_shielding)  # self.wind.Xi(self.d, self.z / self.r)
         
-        fgrav = self.force_gravity(self.r_0, self.z_0)
+        fgrav = force_gravity(self.r_0, self.z_0)
         frad = self.radiation.force_radiation(self.r_0, self.z_0, self.fm, self.tau_uv, epsabs = self.integral_atol, epsrel = self.integral_rtol)[[0,-1]]
         centrifugal_term = self.l**2 / self.r_0**3
         a_r = fgrav[0] + frad[0] + centrifugal_term
         a_z = fgrav[-1] + frad[-1]
         self.a_0 = np.array([a_r, a_z])  # / u.s**2
         self.a = self.a_0
-        self.a_T = np.sqrt(self.a[0]**2 + self.a[-1]**2)
+        #self.a_T = np.sqrt(self.a[0]**2 + self.a[-1]**2)
 
         # hists # 
         # force related variables #
-        self.fg_hist=[fgrav]
-        self.fr_hist=[frad]
+        self.fg_hist=[]
+        self.fr_hist=[]
 
         #### history variables ####
-
         # position and velocities histories #
-        self.t_hist = [self.t]
-        self.r_hist = [self.r]
-        self.phi_hist = [self.phi]
-        self.v_r_hist = [self.v_r]
-        self.z_hist = [self.z]
-        self.v_phi_hist = [self.v_phi]
-        self.v_z_hist = [self.v_z]
-        self.v_T_hist = [self.v_T]
-        self.v_esc_hist = [self.v_esc]
+        self.x_hist = []
+        self.d_hist = []
+        self.t_hist = []
+        self.r_hist = []
+        self.phi_hist = []
+        self.z_hist = []
+        self.v_r_hist = []
+        self.v_phi_hist = []
+        self.v_z_hist = []
+        self.v_hist = []
+        self.v_T_hist = []
+        self.dv_hist = []
+        self.delta_r_sob_hist = []
+        self.v_th_hist = []
 
         # radiation related histories #
-        self.rho_hist = [self.rho]
-        self.tau_dr_hist = [self.tau_dr]
-        self.dv_dr_hist = [self.dv_dr]
-        self.tau_x_hist = [self.tau_x]
-        self.tau_eff_hist = [self.tau_eff]
-        self.fm_hist = [self.fm]
-        self.xi_hist = [self.xi]
-        self.T_hist = [self.T]
+        self.rho_hist = []
+        self.tau_dr_hist = []
+        self.dvt_hist = []
+        self.v2_hist = []
+        self.dv_dr_hist = []
+        self.dr_e_hist = []
+        self.tau_uv_hist = []
+        self.tau_x_hist = []
+        self.tau_eff_hist = []
+        self.taumax_hist = []
+        self.fm_hist = []
+        self.xi_hist = []
+        self.T_hist = []
 
         #force histories #
-        self.a_hist = [self.a]
-        self.a_T_hist = [self.a_T]
+        self.a_hist = []
+        self.a_T_hist = []
 
         y_0 = [self.r_0, self.z_0, self.v_r_0, self.v_z_0]
         yd_0 = [self.v_r_0, self.v_z_0, self.a_0[0], self.a_0[1]]
@@ -209,18 +233,7 @@ class streamline():
         rho = self.rho_0 * radial * v_ratio
         return rho
 
-    def force_gravity(self, r, z):
-        """
-        Computes gravitational force at the current position. 
-
-        Returns:
-            grav: graviational force per unit mass in units of c^2 / Rg.
-        """
-        d = np.sqrt(r**2 + z**2)
-        array = np.asarray([r / d, z / d])
-        grav = - 1. / (d**2) * array
-        return grav
-
+    
    ## kinematics ##
     
     def handle_result(self, solver, t, y, yd):
@@ -283,7 +296,7 @@ class streamline():
         r_dot, z_dot, v_r_dot, v_z_dot = ydot
         a_T = np.sqrt(v_r_dot**2 + v_z_dot**2)
         v_T = np.sqrt(r_dot**2 + z_dot**2)
-        fg = self.force_gravity(r,z)
+        fg = force_gravity(r,z)
         self.update_radiation(r, z, v_T, a_T, save_hist=False)
         fr = self.radiation.force_radiation(r,
                                             z,
@@ -337,7 +350,7 @@ class streamline():
         self.v_T_hist.append(v_T)
         frad = self.radiation.force_radiation(r,z,self.fm, self.tau_uv, epsabs=self.integral_atol, epsrel=self.integral_rtol)[[0,-1]]
         self.fr_hist.append(frad)
-        fgrav = self.force_gravity(r,z)
+        fgrav = force_gravity(r,z)
         self.fg_hist.append(fgrav)
         self.rho_hist.append(self.rho)
         self.tau_dr_hist.append(self.tau_dr)
@@ -366,7 +379,7 @@ class streamline():
         self.T = self.radiation.compute_temperature(self.rho, self.r, self.xi)
         self.v_th = self.wind.thermal_velocity(self.T)
         self.tau_eff = self.radiation.sobolev_optical_depth(self.tau_dr, self.dv_dr, self.v_th)
-        self.fm = self.radiation.force_multiplier(self.tau_eff, self.xi)
+        self.fm = self.radiation.force_multiplier(self.tau_eff, self.xi)  #self.radiation.force_multiplier(self.tau_eff, self.xi)
         if save_hist:
             self.save_hist()
 

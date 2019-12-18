@@ -10,9 +10,9 @@ from skimage.draw import line_aa as compute_line_coordinates
 import cmocean.cm as colormaps
 from qwind.c_functions import wrapper
 
-N_R = 100
-N_Z = 101
-N_1D_GRID = 500
+N_R = 250
+N_Z = 251
+N_1D_GRID = 250
 R_MAX_DEFAULT = 3000
 Z_MAX_DEFAULT = 3000 
 GRID_R_RANGE = np.linspace(0.01, R_MAX_DEFAULT, N_R)
@@ -21,7 +21,7 @@ DENSITY_GRID = 2e8 * np.ones((N_R, N_Z))
 IONIZATION_GRID = 1e3 * np.ones((N_R, N_Z))
 GRID_1D_RANGE = np.linspace(6, 1600, N_1D_GRID)
 UV_FRACTION_GRID = np.ones(N_1D_GRID)
-MDOT_GRID = np.zeros(N_1D_GRID)
+MDOT_GRID = np.ones(N_1D_GRID)
 
 def find_index(r,z):
     r_idx = np.argmin(np.abs(GRID_R_RANGE - r))
