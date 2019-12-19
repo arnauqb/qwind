@@ -10,18 +10,18 @@ from skimage.draw import line_aa as compute_line_coordinates
 import cmocean.cm as colormaps
 from qwind.c_functions import wrapper
 
-N_R = 250
-N_Z = 251
-N_1D_GRID = 250
+N_R = 500
+N_Z = 501
+N_DISK = 250
 R_MAX_DEFAULT = 3000
 Z_MAX_DEFAULT = 3000 
 GRID_R_RANGE = np.linspace(0.01, R_MAX_DEFAULT, N_R)
 GRID_Z_RANGE = np.linspace(0.01, Z_MAX_DEFAULT, N_Z) 
 DENSITY_GRID = 2e8 * np.ones((N_R, N_Z))
 IONIZATION_GRID = 1e3 * np.ones((N_R, N_Z))
-GRID_1D_RANGE = np.linspace(6, 1600, N_1D_GRID)
-UV_FRACTION_GRID = np.ones(N_1D_GRID)
-MDOT_GRID = np.ones(N_1D_GRID)
+GRID_DISK_RANGE = np.linspace(6, 1600, N_DISK)
+UV_FRACTION_GRID = np.ones(N_DISK)
+MDOT_GRID = np.ones(N_DISK)
 
 def find_index(r,z):
     r_idx = np.argmin(np.abs(GRID_R_RANGE - r))
@@ -59,7 +59,7 @@ class Grid1D:
     General grid class
     """
     def __init__(self, initial_value):
-        self.grid = initial_value * np.ones(N_1D_GRID)
+        self.grid = initial_value * np.ones(N_DISK)
 
     def get_value(self, r):
         r_arg = self.get_arg(r)
@@ -67,7 +67,7 @@ class Grid1D:
         return return_values
 
     def get_arg(self, r):
-        r_arg = np.minimum(np.searchsorted(GRID_1D_RANGE, r, side="right"), len(GRID_1D_RANGE)-1)
+        r_arg = np.minimum(np.searchsorted(GRID_DISK_RANGE, r, side="right"), len(GRID_DISK_RANGE)-1)
         return r_arg
 
 class MdotGrid(Grid1D):
@@ -199,7 +199,7 @@ def optical_depth_x_integrand(t, r, z):#, density_grid, ionization_grid, grid_r_
 
 
 class OpticalDepthXrayGrid(Grid):
-    def __init__(self, Rg, initial_value = 0):
+    def __init__(self, Rg = 14766250380501.244, initial_value = 0):
         super().__init__(initial_value)
         rr, zz = np.meshgrid(GRID_R_RANGE, GRID_Z_RANGE, indexing="ij")
         self.rz_grid = np.array([rr.flatten(), zz.flatten()]).T
@@ -231,7 +231,10 @@ class OpticalDepthXrayGrid(Grid):
         
 class IonizationParameterGrid(Grid):
     
-    def __init__(self, xray_luminosity, Rg, initial_value = 1):
+    def __init__(self,
+            xray_luminosity=9.427988727145986e+44,
+            Rg=14766250380501.244,
+            initial_value = 1):
         super().__init__(initial_value)
         self.xray_luminosity = xray_luminosity
         rr, zz = np.meshgrid(GRID_R_RANGE, GRID_Z_RANGE, indexing="ij")

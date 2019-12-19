@@ -1,37 +1,41 @@
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
+#include <assert.h>
+#include "grid_utils.h"
+#define MAX(x, y) (((x) > (y)) ? (x) : (y))
+#define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
-int get_arg(double x, double *arr, size_t n, double l, double r)
-    /*Assumes the array is sorted.*/
-{
-    if (x < arr[0])
-        return 0;
-    if (x > arr[n-1])
-        return n-1;
-
+int binary_search(double *arr, int l, int r, double x, size_t n)
+{ 
     if (r >= l) { 
         int mid = l + (r - l) / 2; 
-        
+  
         // If the element is present at the middle 
         // itself 
         if (arr[mid] == x) 
             return mid; 
-        
+  
         // If element is smaller than mid, then 
         // it can only be present in left subarray 
         if (arr[mid] > x) 
-            return get_arg(x, arr, n, l, mid - 1); 
-        
+            return binary_search(arr, l, mid - 1, x, n); 
+  
         // Else the element can only be present 
         // in right subarray 
-        return get_arg(x, arr, n, mid + 1, r); 
+        return binary_search(arr, mid + 1, r, x, n); 
     } 
-    
+  
     // We reach here when element is not 
     // present in array 
-    return n-1; 
+    return MIN(l, n-1); 
 }
+
+int get_arg(double x, double *arr, size_t n)
+{
+    return binary_search(arr, 0, n, x, n);
+}
+
 int sign(int x)
 {
     if(x>0)
@@ -41,7 +45,7 @@ int sign(int x)
     else
         return 0;
 }
-void drawline(int x1, int y1, int x2, int y2, int *results, int length)
+void drawline(size_t x1, size_t y1, size_t x2, size_t y2, size_t *results, size_t length)
 {
     int x,y,dx,dy,swap,temp,s1,s2,p,i;
 
@@ -96,9 +100,9 @@ double opacity_x_r(double xi)
 
 double tau_uv(double r, double z, int r_arg, int z_arg, double *density_grid, size_t n_z)
 {
-    int length, position; 
+    size_t length, position; 
     length = fmax(r_arg, z_arg) + 1;
-    int *results = malloc(2*length * sizeof(int));
+    size_t *results = malloc(2*length * sizeof(size_t));
     drawline(0, 0, r_arg, z_arg, results, length);
     double tau = 0;
     for (int i=0; i<length; i++)
@@ -111,43 +115,17 @@ double tau_uv(double r, double z, int r_arg, int z_arg, double *density_grid, si
     return tau;
 }
 
-double tau_uv_disk_blob(double r_d, double phi_d, double r, double z, double *density_grid, double *grid_r_range, double *grid_z_range, size_t n_r, size_t n_z)
-{
-    double line_length;
-    size_t r_arg, z_arg, r_d_arg, z_d_arg;
-    double dr, dz;
-    double tau = 0;
-    int length, position; 
-    line_length = sqrt(pow(r,2.) + pow(r_d,2.) + pow(z,2.) - 2 * r * r_d * cos(phi_d));
-    r_arg = get_arg(r, grid_r_range, n_r, grid_r_range[0], grid_r_range[n_r-1]);
-    z_arg = get_arg(z, grid_z_range, n_z, grid_z_range[0], grid_z_range[n_z-1]);
-    r_d_arg = get_arg(r_d, grid_r_range, n_r, grid_r_range[0], grid_r_range[n_r-1]);
-    z_d_arg = get_arg(0., grid_z_range, n_z, grid_z_range[0], grid_z_range[n_z-1]);
-    dr = abs(r_arg - r_d_arg);
-    dz = abs(z_arg - z_d_arg);
-    length = fmax(dr, dz) + 1;
-    int *results = malloc(2*length * sizeof(int));
-    drawline(r_d_arg, z_d_arg, r_arg, z_arg, results, length);
-    for (int i=0; i<length; i++)
-    {
-        position = results[i] * n_z + results[i + length];
-        //printf("%d \n", position);
-        tau += density_grid[position];
-    }
-    tau = tau / length * line_length;
-    free(results);
-    return tau;
-}
+
 void update_tau_x_grid(double *density_grid, double *ionization_grid, double *tau_x_grid, double *grid_r_range, double *grid_z_range, size_t n_r, size_t n_z)
 {
     //int dr, dz;
-    int length, position;
+    size_t length, position;
     double den, xi, r, z, tau;
     for (int i=0; i<n_r; i++){
         r = grid_r_range[i];
         for (int j=0; j<n_z; j++){
             length = fmax(i,j) + 1;
-            int *results = malloc(2*length * sizeof(int));
+            size_t *results = malloc(2*length * sizeof(size_t));
             drawline(0, 0, i, j, results, length);
             tau = 0.;
             //printf("line\n");

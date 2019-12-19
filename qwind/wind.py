@@ -15,6 +15,13 @@ from qwind.integration import qwind2 as integration
 
 from assimulo.solvers.sundials import IDAError
 
+backend = utils.type_of_script()
+if(backend == 'jupyter'):
+    from tqdm import tqdm_notebook as tqdm
+else:
+    #tqdm = tqdm_dump
+    from tqdm import tqdm as tqdm
+
 
 def evolve(line, niter):
     line.iterate(niter=niter)
@@ -158,6 +165,7 @@ class Qwind:
 
         self.plotter = Plotter(self)
         self.first_iter = True
+        self.iteration_info = []
         #if radiation_class == "qsosed":
         #    self.plotter.plot_all_grids()
 
@@ -266,6 +274,27 @@ class Qwind:
             **kwargs,
         )
 
+    def initialize_lines(self,
+                         derive_from_ss=False,
+                         v_z_0=1e7,
+                         niter=5000,
+                         rho_0=2e8,
+                         z_0=1,
+                         dt=4.096/10,
+                         show_plots=True,
+                         **kwargs):
+
+        self.lines = []
+        for i, r in enumerate(self.lines_r_range[:-1]):
+            self.lines.append(self.line(r_0=r,
+                              line_width = self.lines_widths[i],
+                              derive_from_ss=derive_from_ss,
+                              v_z_0=v_z_0,
+                              rho_0=rho_0,
+                              z_0=z_0,
+                              dt = dt,
+                              **kwargs,
+                              ))
     def start_lines(self,
                     derive_from_ss=False,
                     v_z_0=1e7,
@@ -287,11 +316,23 @@ class Qwind:
         niter : int 
             Number of timesteps.
         """
+        self.progress_bar = tqdm(total=10000)
+        if show_plots:
+            self.plotter.plot_all_grids()
+            plt.show()
         for i in range(0, self.iterations):
             print(f"Iteration {i+1} of {self.iterations}")
-            #if self.radiation_class == "qsosed":
-            #    self.radiation.initialize_all_grids()
-            #    self.radiation.integrator.__init__(self.radiation)
+            if (self.radiation_class == "qsosed") and ("old_taus" not in self.modes) and (not self.first_iter):
+                self.radiation.initialize_all_grids()
+                self.radiation.integrator.__init__(self.RG,
+                                                    grid.DENSITY_GRID,
+                                                    grid.GRID_R_RANGE,
+                                                    grid.GRID_Z_RANGE,
+                                                    grid.MDOT_GRID,
+                                                    grid.UV_FRACTION_GRID,
+                                                    grid.GRID_DISK_RANGE,
+                                                    epsrel=1e-3,
+                                                    epsabs=0)
             self.lines = []
             for i, r in enumerate(self.lines_r_range[:-1]):
                 self.lines.append(self.line(r_0=r,
@@ -304,12 +345,19 @@ class Qwind:
                                             **kwargs,
                                             ))
             for i, line in enumerate(self.lines):
-                print(f"Line {i+1} of {len(self.lines)}")
+                #print(f"Line {i+1} of {len(self.lines)}")
                 line.iterate(niter=niter)
                 #except IDAError:
                 #    print("Terminating gracefully...")
                 #    pass
+                if self.radiation_class == "qsosed" and "uv_interp" not in self.modes: 
+                    self.radiation.update_all_grids()
+                    if show_plots:
+                        self.plotter.plot_all_grids()
+                        plt.show()
             if self.radiation_class == "qsosed": 
+                if "uv_interp" not in self.modes:
+                    self.radiation.initialize_all_grids()
                 self.radiation.update_all_grids()
                 if show_plots:
                     self.plotter.plot_all_grids()
@@ -318,10 +366,12 @@ class Qwind:
             self.mdot_w, self.kinetic_luminosity, self.angle, self.v_terminal = self.compute_wind_properties()
             if self.radiation_class != "simple_sed":
                 self.radiation.compute_mass_accretion_rate_grid(self.lines)
-                plt.plot(grid.GRID_1D_RANGE, grid.MDOT_GRID)
+                plt.plot(grid.GRID_DISK_RANGE, grid.MDOT_GRID)
                 plt.show()
-            self.first_iter = False
-        return self.lines
+            self.iteration_info.append([self.mdot_w, self.kinetic_luminosity, self.angle, self.v_terminal])
+            if "uv_interp" in self.modes:
+                self.first_iter = False #Atention change!
+        #return self.lines
 
     def compute_line_mass_loss(self, line):
         """

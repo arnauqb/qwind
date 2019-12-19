@@ -15,7 +15,7 @@ from qwind import constants as const
 from qwind.c_functions import wrapper
 RG = 0. 
 #UV_FRACTION_GRID_RANGE = np.ones(500)
-GRID_1D_RANGE = grid.GRID_1D_RANGE 
+GRID_DISK_RANGE = grid.GRID_DISK_RANGE 
 MDOT_GRID = grid.MDOT_GRID
 UV_FRACTION_GRID = grid.UV_FRACTION_GRID 
 #MDOT_GRID_RANGE = np.linspace(6, 1600, 500)
@@ -116,13 +116,13 @@ def get_density_value(r,z):
 
 @njit
 def get_mdot_value(r_d):
-    rd_arg = min(np.searchsorted(GRID_1D_RANGE, r_d), len(GRID_1D_RANGE)-1)
+    rd_arg = min(np.searchsorted(GRID_DISK_RANGE, r_d), len(GRID_DISK_RANGE)-1)
     mdot = MDOT_GRID[rd_arg]
     return mdot 
 
 @njit
 def get_uv_fraction_value(r_d):
-    rd_arg = min(np.searchsorted(GRID_1D_RANGE, r_d), len(GRID_1D_RANGE)-1)
+    rd_arg = min(np.searchsorted(GRID_DISK_RANGE, r_d), len(GRID_DISK_RANGE)-1)
     uv_fraction = UV_FRACTION_GRID[rd_arg]
     return uv_fraction 
 

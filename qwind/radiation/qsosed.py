@@ -42,7 +42,7 @@ class Radiation:
         self.wind = wind
         self.qsosed = sed.SED(M=self.wind.M / const.M_SUN,
                 mdot=self.wind.mdot,
-                number_bins_fractions=grid.N_1D_GRID)
+                number_bins_fractions=grid.N_DISK)
         if "qsosed_geometry" in self.wind.modes:
             self.uv_radial_flux_fraction = self.qsosed.compute_uv_fractions(return_all = False)
             self.xray_fraction = self.qsosed.xray_fraction
@@ -55,14 +55,14 @@ class Radiation:
             self.xray_fraction = self.wind.f_x 
             self.uv_fraction = 1 - self.wind.f_x
             self.FORCE_RADIATION_CONSTANT = 3. / (8. * np.pi * self.wind.eta) * self.uv_fraction
-            grid.UV_FRACTION_GRID = np.ones(grid.N_1D_GRID)
+            grid.UV_FRACTION_GRID = np.ones(grid.N_DISK)
         self.mdot_0 = self.wind.mdot
-        grid.GRID_1D_RANGE = np.linspace(self.wind.disk_r_min, self.wind.disk_r_max, grid.N_1D_GRID)
-        grid.MDOT_GRID = self.mdot_0 * np.ones_like(grid.GRID_1D_RANGE)
+        grid.GRID_DISK_RANGE = np.linspace(self.wind.disk_r_min, self.wind.disk_r_max, grid.N_DISK)
+        grid.MDOT_GRID = self.mdot_0 * np.ones_like(grid.GRID_DISK_RANGE)
         self.dr = (self.wind.lines_r_max - self.wind.lines_r_min) / (self.wind.nr - 1)
         self.wind.tau_dr_0 = self.wind.tau_dr(self.wind.rho_shielding)
         self.xray_luminosity = self.wind.mdot * self.wind.eddington_luminosity * self.xray_fraction
-        if "old_taus":
+        if "old_taus" in self.wind.modes:
             self.r_x = self.ionization_radius()
             (8. * np.pi * self.wind.eta) * self.uv_fraction
         self.int_hist = []
@@ -111,7 +111,7 @@ class Radiation:
                 grid.GRID_Z_RANGE,
                 grid.MDOT_GRID,
                 grid.UV_FRACTION_GRID,
-                grid.GRID_1D_RANGE,
+                grid.GRID_DISK_RANGE,
                 epsrel=1e-3,
                 epsabs=0)
 
@@ -122,13 +122,16 @@ class Radiation:
         """
         new_mdot_list = grid.MDOT_GRID.copy()
         lines_escaped = np.array(lines)[np.where([line.escaped for line in lines])[0]]
-        for line in lines_escaped:
+        accumulated_wind = 0.
+        for line in lines_escaped[::-1]:
             r_0 = line.r_0
             width = line.line_width
-            r_f_arg = np.searchsorted(grid.GRID_1D_RANGE, r_0 + width/2.)
+            r_f_arg = np.searchsorted(grid.GRID_DISK_RANGE, r_0 + width/2.)
             mdot_w = self.wind.compute_line_mass_loss(line) 
             mdot_w_normalized = mdot_w / self.qsosed.mass_accretion_rate 
-            new_mdot_list[0:r_f_arg] -= mdot_w_normalized
+            accumulated_wind += mdot_w_normalized
+            new_mdot_list[0:r_f_arg] = self.mdot_0 - accumulated_wind 
+        new_mdot_list = np.maximum(new_mdot_list, 0.)
         grid.MDOT_GRID = np.array(new_mdot_list)
         self.mdot_grid.grid = grid.MDOT_GRID
 
@@ -202,7 +205,7 @@ class Radiation:
         Returns:
             ionization parameter.
         """
-        if "old_taus":
+        if "old_taus" in self.wind.modes:
             DENSITY_FLOOR = 1e2
             if r < self.wind.r_init:
                 rho = DENSITY_FLOOR
@@ -210,7 +213,7 @@ class Radiation:
             distance_2 = r**2. + z**2.
             xi = self.xray_luminosity * np.exp(-tau_x) \
                 / (rho * distance_2 * self.wind.RG**2)
-            assert xi > 0, "Ionization parameter cannot be negative!"
+            assert xi >= 0, "Ionization parameter cannot be negative!"
             xi += 1e-20  # to avoid overflow
             return xi
         else:
@@ -413,12 +416,15 @@ class Radiation:
             radiation force at the point (r,z) boosted by fm and attenuated by e^tau_uv.
         """
         if "uv_interp" in self.wind.modes:
-            i_aux = self.integrator.integrate(r,z)
+            if self.wind.first_iter:
+                i_aux = self.integrator.integrate_notau(r, z)
+            else:
+                i_aux = self.integrator.integrate(r,z)
         else:
             i_aux = self.integrator.integrate_notau(r, z)
             i_aux = np.array(i_aux) * np.exp(-tau_uv)
         constant = (1 + fm) * self.FORCE_RADIATION_CONSTANT
-        force = constant  * np.asarray([i_aux[0], 0.,i_aux[1]])
+        force = constant * np.asarray([i_aux[0], 0.,i_aux[1]])
         return force
         #if('old_integral' in self.wind.modes):
         #    i_aux = integration.qwind_old_integration(r, z)
@@ -464,14 +470,13 @@ class Radiation:
         """
         Updates all grids after one iteration (density, ionization parameter, optical depth)
         """
-        print("updating grids...")
+        #print("\nupdating grids...")
         if not init:
             self.density_grid.update_grid(self.wind)
         self.ionization_grid.update_grid(self.density_grid, self.tau_x_grid)
         self.tau_x_grid.update_grid(self.density_grid, self.ionization_grid)
-        print("...")
         self.ionization_grid.update_grid(self.density_grid, self.tau_x_grid)
-        self.tau_x_grid.update_grid(self.density_grid, self.ionization_grid)
-        self.ionization_grid.update_grid(self.density_grid, self.tau_x_grid)
+        #self.tau_x_grid.update_grid(self.density_grid, self.ionization_grid)
+        #self.ionization_grid.update_grid(self.density_grid, self.tau_x_grid)
 
         

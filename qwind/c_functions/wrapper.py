@@ -14,7 +14,7 @@ Python Wrapper for C functions.
 
 # Load C shared library
 libdir = os.path.dirname(__file__)
-libname = "grid_utils.so"
+libname = "qwind_library.so"
 funclib = ctypes.CDLL(os.path.join(libdir, libname))
 
 # update tau_x_grid

@@ -1,5 +1,6 @@
 import os
 import numpy as np
+from qwind import constants
 from ctypes import *
 from scipy import LowLevelCallable
 from scipy.integrate import nquad
@@ -8,10 +9,14 @@ c_double_p = POINTER(c_double)
 
 try:
     libdir = os.path.dirname(__file__)
-    lib = CDLL(os.path.join(libdir, "integrand.so"))
+    lib = CDLL(os.path.join(libdir, "qwind_library.so"))
 except:
-    lib = CDLL(os.path.abspath("integrand.so"))
+    lib = CDLL(os.path.abspath("qwind_library.so"))
     
+tau_uv_disk_blob_c = lib.tau_uv_disk_blob
+tau_uv_disk_blob_c.restype = c_double
+tau_uv_disk_blob_c.argtypes = (c_double, c_double, c_double, c_double)
+
 integrand_r = lib.integrand_r
 integrand_r.restype = c_double
 integrand_r.argtypes = (c_int, POINTER(c_double), c_void_p)
@@ -146,6 +151,10 @@ class Integrator:
         r_int = 2 * z * r_int 
         z_int = 2 * z**2 * z_int
         return [r_int, z_int]
+
+    def tau_uv_disk_blob(self, r_d, phi_d, r, z):
+        tau_uv = tau_uv_disk_blob_c(r_d, phi_d, r, z)
+        return tau_uv * constants.SIGMA_T * self.Rg
 
 if __name__ == "__main__":
 

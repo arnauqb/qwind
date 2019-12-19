@@ -2,12 +2,14 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 from cmocean import cm as colormaps
 from qwind import grid as grid_module
+import matplotlib
 
 class Plotter:
 
     def __init__(self, wind):
 
         self.wind = wind
+#        matplotlib.use("Qt5Agg")
 
     def plot_wind(self, r_max = 2000, z_max=500):
         fig, ax = plt.subplots()
@@ -67,12 +69,14 @@ class Plotter:
         ax.set_xlabel("z [Rg]")
         return fig, ax
 
-    def plot_all_grids(self):
-        cmaps = [colormaps.matter, colormaps.ice, colormaps.tempo]
-        fig, ax = plt.subplots(1,4, figsize=(20,4))
+    def plot_all_grids(self, fig=None, ax=None):
+        cmaps = [colormaps.matter, colormaps.ice, colormaps.balance]
+        grid_plots = []
         grids = [self.wind.radiation.density_grid,
                 self.wind.radiation.ionization_grid,
                 self.wind.radiation.tau_x_grid]
+        #if fig is None or ax is None:
+        fig, ax = plt.subplots(1,4, figsize=(20,5), sharey=True, sharex=True)
         for line in self.wind.lines:
             ax[0].plot(line.r_hist, line.z_hist)
         ax[0].set_xlim(0,3000)
@@ -88,6 +92,16 @@ class Plotter:
             ax[i].set_xlabel("z [Rg]")
             ax[i].set_xlim(grid_module.GRID_R_RANGE[0], grid_module.GRID_R_RANGE[-1])
             ax[i].set_ylim(grid_module.GRID_Z_RANGE[0], grid_module.GRID_Z_RANGE[-1])
+            grid_plots.append(cm)
+        return fig, ax
+        #else:
+        #    for i, grid_plot in enumerate(grids):
+        #        for line in self.wind.lines:
+        #            ax[0].plot(line.r_hist, line.z_hist)
+        #        ax[i+1].pcolormesh(grid_module.GRID_R_RANGE, grid_module.GRID_Z_RANGE, grid_plot.grid.T, norm=LogNorm(), cmap = cmaps[i])
+        #        fig.canvas.draw()
+        #        fig.canvas.flush_events()
+
 
 
 

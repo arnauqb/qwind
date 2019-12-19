@@ -74,7 +74,7 @@ class streamline():
             integral_atol=0,
             integral_rtol=1e-3,
             t_max = 10000,
-            d_max = 1e5,
+            d_max = 3e3,
             terminate_stalling=False,
             max_steps=10000,
             no_tau_z=False,
@@ -140,8 +140,6 @@ class streamline():
         self.v_T_0 = np.sqrt(self.v_z ** 2 + self.v_r ** 2)
         self.v_T = self.v_T_0
         self.v_esc = self.wind.v_esc(self.d)
-        self.dv_dr = 0
-        self.dr_e = 0
         # this variable tracks whether the wind has reached the escape velocity
         self.escaped = False
 
@@ -155,60 +153,54 @@ class streamline():
         self.tau_x = self.radiation.optical_depth_x(
             self.r, self.z, self.r_0, self.tau_dr, self.tau_dr_shielding, self.wind.rho_shielding)
 
-        self.tau_eff = 0
-        self.fm = 0
         self.xi = self.radiation.ionization_parameter(
             self.r, self.z, self.tau_x, self.wind.rho_shielding)  # self.wind.Xi(self.d, self.z / self.r)
         
         fgrav = force_gravity(self.r_0, self.z_0)
-        frad = self.radiation.force_radiation(self.r_0, self.z_0, self.fm, self.tau_uv, epsabs = self.integral_atol, epsrel = self.integral_rtol)[[0,-1]]
+        frad = self.radiation.force_radiation(self.r_0, self.z_0, 0, self.tau_uv, epsabs = self.integral_atol, epsrel = self.integral_rtol)[[0,-1]]
         centrifugal_term = self.l**2 / self.r_0**3
         a_r = fgrav[0] + frad[0] + centrifugal_term
         a_z = fgrav[-1] + frad[-1]
         self.a_0 = np.array([a_r, a_z])  # / u.s**2
         self.a = self.a_0
-        #self.a_T = np.sqrt(self.a[0]**2 + self.a[-1]**2)
-
+        self.a_T = np.sqrt(self.a[0]**2 + self.a[-1]**2)
+        self.dv_dr_0 = self.a_T / self.v_T
+        self.dv_dr = self.dv_dr_0
+        self.tau_eff = self.radiation.sobolev_optical_depth(self.tau_dr, self.dv_dr, self.v_th)
+        self.fm = self.radiation.force_multiplier(self.tau_eff, self.xi)
+        frad = self.radiation.force_radiation(self.r_0, self.z_0, 0, self.tau_uv, epsabs = self.integral_atol, epsrel = self.integral_rtol)[[0,-1]]
         # hists # 
         # force related variables #
-        self.fg_hist=[]
-        self.fr_hist=[]
+        self.fg_hist=[fgrav]
+        self.fr_hist=[frad]
 
         #### history variables ####
         # position and velocities histories #
-        self.x_hist = []
-        self.d_hist = []
-        self.t_hist = []
-        self.r_hist = []
-        self.phi_hist = []
-        self.z_hist = []
-        self.v_r_hist = []
-        self.v_phi_hist = []
-        self.v_z_hist = []
-        self.v_hist = []
-        self.v_T_hist = []
-        self.dv_hist = []
-        self.delta_r_sob_hist = []
-        self.v_th_hist = []
+        self.d_hist = [self.d]
+        self.t_hist = [0]
+        self.r_hist = [self.r_0]
+        self.phi_hist = [self.phi]
+        self.z_hist = [self.z_0]
+        self.v_r_hist = [0]
+        self.v_phi_hist = [self.v_phi_0]
+        self.v_z_hist = [self.v_z_0]
+        self.v_T_hist = [self.v_T_0]
+        self.v_th_hist = [self.v_th]
 
         # radiation related histories #
-        self.rho_hist = []
-        self.tau_dr_hist = []
-        self.dvt_hist = []
-        self.v2_hist = []
-        self.dv_dr_hist = []
-        self.dr_e_hist = []
-        self.tau_uv_hist = []
-        self.tau_x_hist = []
-        self.tau_eff_hist = []
-        self.taumax_hist = []
-        self.fm_hist = []
-        self.xi_hist = []
-        self.T_hist = []
+        self.rho_hist = [self.rho_0]
+        self.tau_dr_hist = [self.tau_dr_0]
+        self.dv_dr_hist = [self.dv_dr]
+        self.tau_uv_hist = [self.tau_uv]
+        self.tau_x_hist = [self.tau_x]
+        self.tau_eff_hist = [self.tau_eff]
+        self.fm_hist = [self.fm]
+        self.xi_hist = [self.xi]
+        self.T_hist = [self.T]
 
         #force histories #
-        self.a_hist = []
-        self.a_T_hist = []
+        self.a_hist = [self.a]
+        self.a_T_hist = [self.a_T]
 
         y_0 = [self.r_0, self.z_0, self.v_r_0, self.v_z_0]
         yd_0 = [self.v_r_0, self.v_z_0, self.a_0[0], self.a_0[1]]
@@ -249,7 +241,7 @@ class streamline():
         v_T = np.sqrt(v_r**2 + v_z**2)
         a_T = np.sqrt(solver.yd[2]**2 + solver.yd[3]**2)
         self.update_radiation(r, z, v_T, a_T, save_hist=True)
-        self.tqdm.update(1)
+        self.wind.progress_bar.update(1)
         if d > self.d_max:
             self.escaped = True
             raise Escape 
@@ -330,6 +322,7 @@ class streamline():
         solver.inith = 0.1 #self.wind.RG / const.C
         solver.maxh = self.dt * self.wind.RG / const.C
         solver.report_continuously = True
+        solver.display_progress = False
         solver.verbosity = 50 # 50 = quiet
         solver.maxsteps = self.max_steps
         solver.num_threads = 3
@@ -390,7 +383,6 @@ class streamline():
         Args:        
             niter : Number of iterations
         """
-        self.tqdm = tqdm(total=10000)
         print(' ', end='', flush=True)
         #y_0 = [self.r_0, self.z_0, self.v_r_0, self.v_z_0]
         #self.y_hist = [y_0]
@@ -408,11 +400,11 @@ class streamline():
             self.escaped = True
             self.escaping_angle = np.arctan(self.z_hist[-1] / self.r_hist[-1])
             self.terminal_velocity = np.sqrt(self.v_r_hist[-1]**2 + self.v_z_hist[-1]**2)
-            print("Line escaped!")
+            print("\u2705", end=" ")
             pass
         except BackToDisk:
             self.solver.finalize()
-            print("Line failed!")
+            print("\u274C", end=" ")
             pass
         except Stalling:
             print("Line stalled!")
@@ -435,3 +427,5 @@ class streamline():
             #else:
             #    print("Line stalled!")
             #    pass
+        self.wind.progress_bar.clear()
+        self.wind.progress_bar.reset()
