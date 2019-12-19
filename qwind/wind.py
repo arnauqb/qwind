@@ -43,6 +43,7 @@ class Qwind:
                  disk_r_min=6.,
                  disk_r_max=1600,
                  f_x=0.15,
+                 f_uv=None,
                  T=2e6,
                  mu=1,
                  modes=[],
@@ -134,13 +135,9 @@ class Qwind:
         self.lines_r_min = lines_r_min
         self.lines_r_max = lines_r_max
         self.f_x = f_x
-        # compute initial radii of streamlines
-        self.dr = (self.lines_r_max - self.lines_r_min) / (self.nr - 1)
-        self.lines_r_range = [self.lines_r_min +
-                              (i-0.5) * self.dr for i in range(1, self.nr+1)]
-        self.lines_widths = np.diff(self.lines_r_range)
-        self.r_init = self.lines_r_range[0]
+        self.f_uv = f_uv
 
+        
         # initialize radiation class
         self.radiation_class = radiation_class
         radiation_module_name = "qwind.radiation." + radiation_class
@@ -148,6 +145,16 @@ class Qwind:
         self.radiation = radiation_module.Radiation(self)
         
         self.tau_dr_shielding = self.tau_dr(self.rho_shielding)
+        # compute initial radii of streamlines
+        if log_spaced == True:
+            dr_log = (np.log10(self.lines_r_max) - np.log10(self.lines_r_min)) / (self.nr - 1)
+            lines_r_range_log = np.array([np.log10(self.lines_r_min) + (i-0.5) * dr_log for i in range(1, self.nr+1)])
+            self.lines_r_range = 10**lines_r_range_log
+        else:
+            dr = (self.lines_r_max - self.lines_r_min) / (self.nr - 1)
+            self.lines_r_range = np.array([self.lines_r_min + (i-0.5) * dr for i in range(1, self.nr + 1)])
+        self.lines_widths = np.diff(self.lines_r_range)
+        self.r_init = self.lines_r_range[0]
 
                 
         # create directory if it doesnt exist. Warning, this overwrites previous outputs.
@@ -317,7 +324,7 @@ class Qwind:
             Number of timesteps.
         """
         self.progress_bar = tqdm(total=10000)
-        if show_plots:
+        if show_plots and self.radiation_class != "simple_sed":
             self.plotter.plot_all_grids()
             plt.show()
         for i in range(0, self.iterations):
@@ -350,24 +357,22 @@ class Qwind:
                 #except IDAError:
                 #    print("Terminating gracefully...")
                 #    pass
-                if self.radiation_class == "qsosed" and "uv_interp" not in self.modes: 
+                if self.radiation_class == "qsosed" and "uv_interp" not in self.modes and "dont_update_grids" not in self.modes: 
                     self.radiation.update_all_grids()
                     if show_plots:
                         self.plotter.plot_all_grids()
                         plt.show()
-            if self.radiation_class == "qsosed": 
+            self.mdot_w, self.kinetic_luminosity, self.angle, self.v_terminal = self.compute_wind_properties()
+            if self.radiation_class != "simple_sed": 
                 if "uv_interp" not in self.modes:
                     self.radiation.initialize_all_grids()
                 self.radiation.update_all_grids()
+                self.radiation.compute_mass_accretion_rate_grid(self.lines)
                 if show_plots:
                     self.plotter.plot_all_grids()
                     plt.show()
-
-            self.mdot_w, self.kinetic_luminosity, self.angle, self.v_terminal = self.compute_wind_properties()
-            if self.radiation_class != "simple_sed":
-                self.radiation.compute_mass_accretion_rate_grid(self.lines)
-                plt.plot(grid.GRID_DISK_RANGE, grid.MDOT_GRID)
-                plt.show()
+                    plt.plot(grid.GRID_DISK_RANGE, grid.MDOT_GRID)
+                    plt.show()
             self.iteration_info.append([self.mdot_w, self.kinetic_luminosity, self.angle, self.v_terminal])
             if "uv_interp" in self.modes:
                 self.first_iter = False #Atention change!

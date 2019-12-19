@@ -288,6 +288,42 @@ def qwind_integration_rel(r, z, disk_r_min, disk_r_max, epsabs=0, epsrel=1e-11):
     z_int = 2. * z**2 * z_int
     return (r_int, z_int, r_error, z_error)
 
+@jit_integrand
+def _integrate_dblquad_kernel_z_jitted_rel_tau(phi_d, r_d, r, z):
+    ff0 = nt_rel_factors(r_d) / r_d**2.
+    delta = r ** 2. + r_d ** 2. + z ** 2. - 2. * r * r_d * np.cos(phi_d)
+    tau_uv = np.sqrt(delta) * 1e9 * const.SIGMA_T * 1e14
+    abs_uv = np.exp(-tau_uv)
+    ff = ff0 * 1. / delta**2. * abs_uv
+    return ff
+
+@jit_integrand
+def _integrate_dblquad_kernel_r_jitted_rel_tau(phi_d, r_d, r, z):
+    ff0 = nt_rel_factors(r_d) / r_d**2.
+    delta = r**2. + r_d**2. + z**2. - 2.*r*r_d * np.cos(phi_d)
+    cos_gamma = (r - r_d*np.cos(phi_d)) / delta**2.
+    tau_uv = np.sqrt(delta) * 1e9 * const.SIGMA_T * 1e14
+    abs_uv = np.exp(-tau_uv)
+    ff = ff0 * cos_gamma * abs_uv
+    return ff
+
+def qwind_integration_rel_tau(r, z, disk_r_min=6, disk_r_max=1600, epsabs=0, epsrel=1e-11):
+    r_int, r_error = scipy.integrate.nquad(
+        _integrate_dblquad_kernel_r_jitted_rel_tau, ((
+            0, np.pi), (disk_r_min, disk_r_max)),
+        args=(r, z),
+        opts=[{'points': [], 'epsabs' : epsabs, 'epsrel': epsrel},
+            {'points': [], 'epsabs' : epsabs, 'epsrel' : epsrel}])
+    z_int, z_error = scipy.integrate.nquad(
+        _integrate_dblquad_kernel_z_jitted_rel_tau, ((
+            0, np.pi), (disk_r_min, disk_r_max)),
+        args=(r, z),
+        opts=[{'points': [], 'epsabs' : epsabs, 'epsrel': epsrel},
+            {'points': [], 'epsabs' : epsabs, 'epsrel' : epsrel}])
+    r_int = 2. * z * r_int
+    z_int = 2. * z**2 * z_int
+    return (r_int, z_int, r_error, z_error)
+
 
 ## old integral ##
 

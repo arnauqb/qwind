@@ -10,9 +10,9 @@ from skimage.draw import line_aa as compute_line_coordinates
 import cmocean.cm as colormaps
 from qwind.c_functions import wrapper
 
-N_R = 500
-N_Z = 501
-N_DISK = 250
+N_R = 1000
+N_Z = 1001
+N_DISK = 100
 R_MAX_DEFAULT = 3000
 Z_MAX_DEFAULT = 3000 
 GRID_R_RANGE = np.linspace(0.01, R_MAX_DEFAULT, N_R)
@@ -90,7 +90,7 @@ class DensityGrid(Grid):
         """
         r_hist = line.r_hist 
         z_hist = line.z_hist 
-        if np.max(line.z_hist) > 50:#line.escaped == True:
+        if True:#np.max(line.z_hist) > 1:#line.escaped == True:
             line_width = np.array(r_hist) / line.r_0 * dr / 2
             rectangles = []
             for i in range(0,len(r_hist)-1):
@@ -120,7 +120,7 @@ class DensityGrid(Grid):
 
     def fill_rho_values(self, line):
         dr = line.line_width
-        if np.max(line.z_hist) > 50:
+        if True: #np.max(line.z_hist) > 1:
             rectangles = self.get_line_boundaries(line,dr)
             for i,rectangle in enumerate(rectangles):
                 rectangle_idx = []

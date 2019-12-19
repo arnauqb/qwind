@@ -48,16 +48,23 @@ class Radiation:
             self.xray_fraction = self.qsosed.xray_fraction
             self.uv_fraction = self.qsosed.uv_fraction
             self.FORCE_RADIATION_CONSTANT = 3. / (8. * np.pi * self.wind.eta)
+            grid.UV_FRACTION_GRID = np.array(self.uv_radial_flux_fraction)
+            grid.GRID_DISK_RANGE = np.linspace(self.wind.disk_r_min, self.wind.disk_r_max, grid.N_DISK)
             self.wind.disk_r_min = self.qsosed.warm_radius
-            self.wind.disk_r_max = self.qsosed.gravity_radius
-            grid.UV_FRACTION_GRID = self.uv_radial_flux_fraction
+            self.wind.disk_r_max = grid.GRID_DISK_RANGE[np.argwhere(grid.UV_FRACTION_GRID < 0.05)[0][0]]#self.qsosed.gravity_radius
+            grid.GRID_DISK_RANGE = np.linspace(self.wind.disk_r_min, self.wind.disk_r_max, grid.N_DISK)
+            self.wind.lines_r_min = self.wind.disk_r_min
+            self.wind.lines_r_max = self.wind.disk_r_max
         else:
             self.xray_fraction = self.wind.f_x 
-            self.uv_fraction = 1 - self.wind.f_x
+            if self.wind.f_uv is None:
+                self.uv_fraction = 1 - self.wind.f_x
+            else:
+                self.uv_fraction = self.wind.f_uv
             self.FORCE_RADIATION_CONSTANT = 3. / (8. * np.pi * self.wind.eta) * self.uv_fraction
             grid.UV_FRACTION_GRID = np.ones(grid.N_DISK)
+            grid.GRID_DISK_RANGE = np.linspace(self.wind.disk_r_min, self.wind.disk_r_max, grid.N_DISK)
         self.mdot_0 = self.wind.mdot
-        grid.GRID_DISK_RANGE = np.linspace(self.wind.disk_r_min, self.wind.disk_r_max, grid.N_DISK)
         grid.MDOT_GRID = self.mdot_0 * np.ones_like(grid.GRID_DISK_RANGE)
         self.dr = (self.wind.lines_r_max - self.wind.lines_r_min) / (self.wind.nr - 1)
         self.wind.tau_dr_0 = self.wind.tau_dr(self.wind.rho_shielding)
@@ -184,11 +191,13 @@ class Radiation:
         return root.root
 
     def compute_temperature(self, n, R, xi, Tx=1e8):
-        #xi = max(xi, 1e-10)
-        #eq_temp = self.compute_equilibrium_temperature(n, xi, Tx)
-        #disk_temp = self.qsosed.disk_nt_temperature4(R)**(1./4.)
-        #return max(disk_temp, eq_temp)
-        return self.wind.T
+        if "compute_temperature" in self.wind.modes:
+            xi = max(xi, 1e-10)
+            eq_temp = self.compute_equilibrium_temperature(n, xi, Tx)
+            disk_temp = self.qsosed.disk_nt_temperature4(R)**(1./4.)
+            return max(disk_temp, eq_temp)
+        else:
+            return self.wind.T
 
 
     def ionization_parameter(self, r, z, tau_x, rho):
@@ -422,7 +431,17 @@ class Radiation:
                 i_aux = self.integrator.integrate(r,z)
         else:
             i_aux = self.integrator.integrate_notau(r, z)
-            i_aux = np.array(i_aux) * np.exp(-tau_uv)
+            if "no_tau_uv" in self.wind.modes:
+                abs_uv = 1
+            if "no_tau_z" in self.wind.modes:
+                d = np.sqrt(r**2 + z**2)
+                sin_theta = z / d
+                cos_theta = r / d
+                tau_uv = tau_uv * np.array([cos_theta, sin_theta])
+                abs_uv = np.exp(-tau_uv)
+            else:
+                abs_uv = np.exp(-tau_uv)
+            i_aux = np.array(i_aux) * abs_uv
         constant = (1 + fm) * self.FORCE_RADIATION_CONSTANT
         force = constant * np.asarray([i_aux[0], 0.,i_aux[1]])
         return force

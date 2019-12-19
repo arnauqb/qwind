@@ -391,7 +391,7 @@ void initialize_arrays(double *grid_r_range, double *grid_z_range, double *densi
         GRID_DISK_RANGE[i] = grid_disk_range[i];
     }
     R_MIN = GRID_DISK_RANGE[0];
-    R_MAX = GRID_DISK_RANGE[n_disk-1];
+    R_MAX = GRID_DISK_RANGE[N_DISK-1];
 }
 
 double integrand_r(int n, double *x, void *user_data)

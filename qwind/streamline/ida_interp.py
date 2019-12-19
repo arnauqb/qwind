@@ -35,6 +35,9 @@ class BackToDisk(Exception):
 class Escape(Exception):
     pass
 
+class OutOfGrid(Exception):
+    pass
+
 class Stalling(Exception):
     pass
 
@@ -109,6 +112,7 @@ class streamline():
         self.no_tau_z = no_tau_z 
         self.no_tau_uv = no_tau_uv
         self.es_only = es_only
+        self.self_crossing_counter = 0
 
         # black hole and disc variables #
         self.T = T  # * u.K
@@ -239,16 +243,24 @@ class streamline():
         solver.yd_sol.extend([yd])
         d = np.sqrt(r**2 + z**2)
         v_T = np.sqrt(v_r**2 + v_z**2)
+        v_esc = self.wind.v_esc(d)
+        if v_T > v_esc:
+            self.escaped = True
         a_T = np.sqrt(solver.yd[2]**2 + solver.yd[3]**2)
         self.update_radiation(r, z, v_T, a_T, save_hist=True)
         self.wind.progress_bar.update(1)
         if d > self.d_max:
-            self.escaped = True
-            raise Escape 
+            if self.escaped:
+                raise Escape 
+            else:
+                raise OutOfGrid
         if z < (self.z_0 - 0.01):
             raise BackToDisk 
+
         if r < (self.r_0 - 0.01):
-            raise BackToDisk
+            self.self_crossing_counter += 1
+            if self.self_crossing_counter == 3:
+                raise BackToDisk
 
         #if (z < np.max(self.z_hist)) and (v_z < 0):
         #    raise BackToDisk
@@ -397,14 +409,16 @@ class streamline():
             self.solver.simulate(self.t_max)
         except Escape:
             self.solver.finalize()
-            self.escaped = True
             self.escaping_angle = np.arctan(self.z_hist[-1] / self.r_hist[-1])
             self.terminal_velocity = np.sqrt(self.v_r_hist[-1]**2 + self.v_z_hist[-1]**2)
-            print("\u2705", end=" ")
+            print("\U0001F4A8", end=" ")
             pass
+        except OutOfGrid:
+            self.solver.finalize()
+            print("\U00002753")
         except BackToDisk:
             self.solver.finalize()
-            print("\u274C", end=" ")
+            print("\U0001F4A5", end=" ")
             pass
         except Stalling:
             print("Line stalled!")
