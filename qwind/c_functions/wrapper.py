@@ -73,9 +73,9 @@ funclib.tau_uv.argtypes = [
 funclib.tau_uv.restype = ctypes.c_double
 
 def tau_uv(r, z, density_grid):
-    n_z = density_grid.grid.shape[1]
+    n_z = density_grid.values.shape[1]
     r_arg, z_arg = density_grid.get_arg(r,z)
-    tau_uv = funclib.tau_uv(r, z, r_arg, z_arg, density_grid.grid.ravel(), n_z)
+    tau_uv = funclib.tau_uv(r, z, r_arg, z_arg, density_grid.values.ravel(), n_z)
     return tau_uv
 
 # optical depth uv disk blob

@@ -48,7 +48,7 @@ def force_gravity(r, z):
     Computes gravitational force at the current position. 
     
     Returns:
-        grav: graviational force per unit mass in units of c^2 / Rg.
+        grav: graviational force per unit mass in units of c^2 / R_g.
     """
     d = np.sqrt(r**2 + z**2)
     array = np.array([r / d, z / d])
@@ -87,13 +87,13 @@ class streamline():
         """
         Args:
             parent : Parents class (wind object), to inherit global properties.
-            r_0 : Initial radius in Rg units.
-            z_0: Initial height in Rg units.
+            r_0 : Initial radius in R_g units.
+            z_0: Initial height in R_g units.
             rho_0 : Initial number density. Units of 1/cm^3.
             T : Initial streamline temperature in K.
             v_z_0 : Initial vertical velocity in units of cm/s.
             v_r_0 : Initial radial velocity in units of cm/s.
-            dt : Timestep in units of Rg/c.
+            dt : Timestep in units of R_g/c.
         """
         self.line_width = line_width
         self.wind = wind
@@ -107,7 +107,7 @@ class streamline():
         self.integral_rtol = integral_rtol
         self.max_steps = max_steps
         self.terminate_stalling = terminate_stalling
-        self.t_max = t_max * self.wind.RG / const.C
+        self.t_max = t_max * self.wind.R_g / const.C
         self.d_max = d_max
         self.no_tau_z = no_tau_z 
         self.no_tau_uv = no_tau_uv
@@ -121,8 +121,8 @@ class streamline():
         self.rho = self.rho_0
         ## position variables ##
         ## coordinates of particle are (R, phi, z) ##
-        ## all positions are in units of Rg, all velocities in units of c. ##
-        self.dt = dt  # units of  Rg / c
+        ## all positions are in units of R_g, all velocities in units of c. ##
+        self.dt = dt  # units of  R_g / c
         self.r = r_0
         self.phi = 0
         self.z = z_0
@@ -331,8 +331,8 @@ class streamline():
         solver = IDA(model)
         solver.rtol = self.solver_rtol
         solver.atol = self.solver_atol #* np.array([100, 10, 1e-4, 1e-4])
-        solver.inith = 0.1 #self.wind.RG / const.C
-        solver.maxh = self.dt * self.wind.RG / const.C
+        solver.inith = 0.1 #self.wind.R_g / const.C
+        solver.maxh = self.dt * self.wind.R_g / const.C
         solver.report_continuously = True
         solver.display_progress = False
         solver.verbosity = 50 # 50 = quiet
@@ -400,7 +400,7 @@ class streamline():
         #self.y_hist = [y_0]
         #self.end_line = False
         self.first_iter = False
-        #self.tfinal = 10000 * self.wind.RG / const.C
+        #self.tfinal = 10000 * self.wind.R_g / const.C
         self.stalling_timer = 0
         self.stalling = False
         #ncp = 1000

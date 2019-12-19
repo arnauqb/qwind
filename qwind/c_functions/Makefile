@@ -1,6 +1,6 @@
 CC=gcc
 OBJS = qwind_library.so
-CFLAGS =  -Wall -fPIC -shared -g
+CFLAGS =  -Wall -fPIC -g -shared
 INCLUDE = *.c
 LIBS = -lm -lgsl -lgslcblas
 

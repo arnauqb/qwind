@@ -1,16 +1,19 @@
 """
 This module handles the radiation transfer aspects of Qwind.
 """
-
 import numpy as np
 from numba import njit
 from scipy import interpolate, optimize
-#from qwind.integration import qwind2 as integration 
 from qwind.c_functions import integration
 import qwind.constants as const
 from qsosed import sed
 from qwind import grid
 from qwind.c_functions.wrapper import tau_uv as tau_uv_c
+
+
+N_R = 1000
+N_Z = 1001
+N_DISK = 100
 
 @njit
 def cooling_g_compton(T, xi, Tx=1e8):
@@ -42,17 +45,15 @@ class Radiation:
         self.wind = wind
         self.qsosed = sed.SED(M=self.wind.M / const.M_SUN,
                 mdot=self.wind.mdot,
-                number_bins_fractions=grid.N_DISK)
+                number_bins_fractions=N_DISK)
         if "qsosed_geometry" in self.wind.modes:
             self.uv_radial_flux_fraction = self.qsosed.compute_uv_fractions(return_all = False)
             self.xray_fraction = self.qsosed.xray_fraction
             self.uv_fraction = self.qsosed.uv_fraction
+            r_range_aux = np.linspace(self.qsosed.warm_radius, self.qsosed.gravity_radius, N_DISK)
             self.FORCE_RADIATION_CONSTANT = 3. / (8. * np.pi * self.wind.eta)
-            grid.UV_FRACTION_GRID = np.array(self.uv_radial_flux_fraction)
-            grid.GRID_DISK_RANGE = np.linspace(self.wind.disk_r_min, self.wind.disk_r_max, grid.N_DISK)
             self.wind.disk_r_min = self.qsosed.warm_radius
-            self.wind.disk_r_max = grid.GRID_DISK_RANGE[np.argwhere(grid.UV_FRACTION_GRID < 0.05)[0][0]]#self.qsosed.gravity_radius
-            grid.GRID_DISK_RANGE = np.linspace(self.wind.disk_r_min, self.wind.disk_r_max, grid.N_DISK)
+            self.wind.disk_r_max = r_range_aux[np.argwhere(self.uv_radial_flux_fraction < 0.05)[0][0]]
             self.wind.lines_r_min = self.wind.disk_r_min
             self.wind.lines_r_max = self.wind.disk_r_max
         else:
@@ -61,11 +62,9 @@ class Radiation:
                 self.uv_fraction = 1 - self.wind.f_x
             else:
                 self.uv_fraction = self.wind.f_uv
+            self.uv_radial_flux_fraction = np.ones(N_DISK)
             self.FORCE_RADIATION_CONSTANT = 3. / (8. * np.pi * self.wind.eta) * self.uv_fraction
-            grid.UV_FRACTION_GRID = np.ones(grid.N_DISK)
-            grid.GRID_DISK_RANGE = np.linspace(self.wind.disk_r_min, self.wind.disk_r_max, grid.N_DISK)
         self.mdot_0 = self.wind.mdot
-        grid.MDOT_GRID = self.mdot_0 * np.ones_like(grid.GRID_DISK_RANGE)
         self.dr = (self.wind.lines_r_max - self.wind.lines_r_min) / (self.wind.nr - 1)
         self.wind.tau_dr_0 = self.wind.tau_dr(self.wind.rho_shielding)
         self.xray_luminosity = self.wind.mdot * self.wind.eddington_luminosity * self.xray_fraction
@@ -111,44 +110,44 @@ class Radiation:
                 ETAMAX_INTERP_ETAMAX_VALUES[-1]),
             kind='cubic')  # important! xi is log here
         # new stuff
-        self.initialize_all_grids(first_iter=True)
-        self.integrator = integration.Integrator(self.wind.RG,
-                grid.DENSITY_GRID,
-                grid.GRID_R_RANGE,
-                grid.GRID_Z_RANGE,
-                grid.MDOT_GRID,
-                grid.UV_FRACTION_GRID,
-                grid.GRID_DISK_RANGE,
-                epsrel=1e-3,
-                epsabs=0)
+        self.grid = grid.Grid(self.wind, n_r=N_R, n_z=N_Z, n_disk=N_DISK)
+        #self.grid.update_all(init=True)
+        #self.integrator = integration.Integrator(self.wind.R_g,
+        #        self.grid.density_grid,
+        #        self.grid.grid_r_range,
+        #        self.grid.grid_z_range,
+        #        self.grid.mdot_grid,
+        #        self.grid.uv_fraction_grid,
+        #        self.grid.grid_disk_range,
+        #        epsrel=1e-3,
+        #        epsabs=0)
 
     def compute_mass_accretion_rate_grid(self, lines):
         """
         Returns mass accretion rate at radius r, taking into account the escaped wind.
         Also updates it from the grid file.
         """
-        new_mdot_list = grid.MDOT_GRID.copy()
+        new_mdot_list = self.grid.mdot_grid.copy()
         lines_escaped = np.array(lines)[np.where([line.escaped for line in lines])[0]]
         accumulated_wind = 0.
         for line in lines_escaped[::-1]:
             r_0 = line.r_0
             width = line.line_width
-            r_f_arg = np.searchsorted(grid.GRID_DISK_RANGE, r_0 + width/2.)
+            r_f_arg = np.searchsorted(self.grid.grid_disk_range, r_0 + width/2.)
             mdot_w = self.wind.compute_line_mass_loss(line) 
             mdot_w_normalized = mdot_w / self.qsosed.mass_accretion_rate 
             accumulated_wind += mdot_w_normalized
             new_mdot_list[0:r_f_arg] = self.mdot_0 - accumulated_wind 
         new_mdot_list = np.maximum(new_mdot_list, 0.)
-        grid.MDOT_GRID = np.array(new_mdot_list)
-        self.mdot_grid.grid = grid.MDOT_GRID
+        self.grid.mdot_grid = np.array(new_mdot_list)
 
     def optical_depth_uv(self, r, z, r_0, tau_dr, tau_dr_0):
         """
         UV optical depth.
 
         Args:
-            r: radius in Rg units.
-            z: height in Rg units.
+            r: radius in R_g units.
+            z: height in R_g units.
             r_0: initial streamline radius.
             tau_dr: charact. optical depth
             tau_dr_0: initial charact. optical depth
@@ -157,7 +156,7 @@ class Radiation:
             UV optical depth at point (r,z) 
         """
         if "old_taus" not in self.wind.modes:
-            tau = tau_uv_c(r, z, self.density_grid) * const.SIGMA_T * self.wind.RG
+            tau = tau_uv_c(r, z, self.grid.density_grid) * const.SIGMA_T * self.wind.R_g
             return tau
         else: 
             delta_r_0 = abs(r_0 - self.wind.r_init)
@@ -205,8 +204,8 @@ class Radiation:
         Computes Ionization parameter.
 
         Args:
-            r: radius in Rg units.
-            z: height in Rg units.
+            r: radius in R_g units.
+            z: height in R_g units.
             tau_x: X-Ray optical depth at the point (r,z)
             rho_shielding: density of the atmosphere that contributes
                            to shielding the X-Rays.
@@ -221,14 +220,14 @@ class Radiation:
                 tau_x = tau_x / rho * DENSITY_FLOOR
             distance_2 = r**2. + z**2.
             xi = self.xray_luminosity * np.exp(-tau_x) \
-                / (rho * distance_2 * self.wind.RG**2)
+                / (rho * distance_2 * self.wind.R_g**2)
             assert xi >= 0, "Ionization parameter cannot be negative!"
             xi += 1e-20  # to avoid overflow
             return xi
         else:
-            tau_x = self.tau_x_grid.get_value(r,z)
+            tau_x = self.grid.tau_x_grid.get_value(r,z)
             d2 = r**2. + z**2.
-            xi = self.xray_luminosity * np.exp(-tau_x) /  ( rho * d2 * self.wind.RG**2)
+            xi = self.xray_luminosity * np.exp(-tau_x) /  ( rho * d2 * self.wind.R_g**2)
             return xi + 1e-15 # to avoid roundoff issues
 
     def ionization_radius_kernel(self, rx):
@@ -275,7 +274,7 @@ class Radiation:
         X-Ray opacity factor (respect to just Thomson cross-section).
 
         Args:
-            r: radius in Rg
+            r: radius in R_g
 
         Returns:
             opacity factor
@@ -290,8 +289,8 @@ class Radiation:
         X-Ray optical depth at a distance d.
 
         Args:
-            r: radius in Rg units.
-            z: height in Rg units.
+            r: radius in R_g units.
+            z: height in R_g units.
             r_0: initial streamline radius.
             tau_dr: charact. optical depth
             tau_dr_0: initial charact. optical depth
@@ -301,7 +300,7 @@ class Radiation:
             X-Ray optical depth at the point (r,z)
         """
         if "old_taus" not in self.wind.modes:
-            tau_x = self.tau_x_grid.get_value(r,z)
+            tau_x = self.grid.tau_x_grid.get_value(r,z)
             return tau_x
         else:
             if es_only:
@@ -374,7 +373,7 @@ class Radiation:
 
         Args:
             tau_dr : Charact. optical depth.
-            dv_dr : Velocity spatial gradient (dv is in c units, dr is in Rg units).
+            dv_dr : Velocity spatial gradient (dv is in c units, dr is in R_g units).
             T : Wind temperature.
 
         Returns:
@@ -416,8 +415,8 @@ class Radiation:
         Computes the radiation force at the point (r,z)
 
         Args:
-            r: radius in Rg units.
-            z: height in Rg units.
+            r: radius in R_g units.
+            z: height in R_g units.
             fm: force_multiplier
             tau_uv: UV optical depth.
 
@@ -475,27 +474,4 @@ class Radiation:
         #    return [force, error]
         #return force
 
-    def initialize_all_grids(self, first_iter=True):
-        self.density_grid = grid.DensityGrid(self.wind.rho_shielding)
-        self.ionization_grid = grid.IonizationParameterGrid(self.xray_luminosity, self.wind.RG)
-        self.tau_x_grid = grid.OpticalDepthXrayGrid(self.wind.RG)
-        if first_iter:
-            self.mdot_grid = grid.Grid1D(self.mdot_0)
-            self.uv_fraction_grid = grid.Grid1D(1)
-            self.uv_fraction_grid.grid = grid.UV_FRACTION_GRID
-        self.update_all_grids(init=True)
-
-    def update_all_grids(self, init=False, end=False):
-        """
-        Updates all grids after one iteration (density, ionization parameter, optical depth)
-        """
-        #print("\nupdating grids...")
-        if not init:
-            self.density_grid.update_grid(self.wind)
-        self.ionization_grid.update_grid(self.density_grid, self.tau_x_grid)
-        self.tau_x_grid.update_grid(self.density_grid, self.ionization_grid)
-        self.ionization_grid.update_grid(self.density_grid, self.tau_x_grid)
-        #self.tau_x_grid.update_grid(self.density_grid, self.ionization_grid)
-        #self.ionization_grid.update_grid(self.density_grid, self.tau_x_grid)
-
-        
+    

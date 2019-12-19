@@ -11,9 +11,9 @@ from scipy import interpolate
 
 import qwind.constants as const
 from qwind import utils, grid
-from qwind.integration import qwind2 as integration
 
 from assimulo.solvers.sundials import IDAError
+from qwind.c_functions import integration
 
 backend = utils.type_of_script()
 if(backend == 'jupyter'):
@@ -50,7 +50,7 @@ class Qwind:
                  rho_shielding=2e8,
                  intsteps=1,
                  nr=20,
-                 d_max=1e5,
+                 d_max=1e3,
                  save_dir=None,
                  radiation_class="simple_sed",
                  solver="ida",
@@ -70,9 +70,9 @@ class Qwind:
         eta : float
             Accretion efficiency (default is for scalar black hole).
         line_r_min : float
-            Radius of the first streamline to launch, in Rg units.
+            Radius of the first streamline to launch, in R_g units.
         line_r_max : float
-            Radius of the last streamline to launch, in Rg units.
+            Radius of the last streamline to launch, in R_g units.
         disc_r_min: float
             Minimum radius of acc. disc, default is ISCO for scalar black hole.
         disc_r_max: float
@@ -94,14 +94,12 @@ class Qwind:
         n_cpus: int
             Number of cpus to use.
         """
-
-        self.n_cpus = n_cpus
-
         # array containing different modes for debugging #
         self.modes = modes
         self.iterations = iterations
         # black hole and disc variables #
         self.M = M * const.M_SUN
+        self.R_g = const.G * self.M / (const.C ** 2)  # gravitational radius
         self.mdot = mdot
         self.spin = spin
         self.mu = mu
@@ -111,10 +109,6 @@ class Qwind:
         self.nr = nr + 1 # nr denotes the borders between lines, so...
         self.d_max = d_max
         self.rho_shielding = rho_shielding
-        self.density_grid = grid.DensityGrid(rho_shielding)
-        self.escaped_radii = (0,0)
-
-
         if solver == "euler":
             from qwind.streamline.euler import streamline as streamline_solver
         elif solver == "rk4":
@@ -127,9 +121,6 @@ class Qwind:
             print("solver not found")
             raise Exception
         self.streamline_solver = streamline_solver
-
-        self.RG = const.G * self.M / (const.C ** 2)  # gravitational radius
-        self.bol_luminosity = self.mdot * self.eddington_luminosity
         self.T = T
         self.v_th = self.thermal_velocity(T)
         self.lines_r_min = lines_r_min
@@ -137,14 +128,26 @@ class Qwind:
         self.f_x = f_x
         self.f_uv = f_uv
 
-        
         # initialize radiation class
         self.radiation_class = radiation_class
         radiation_module_name = "qwind.radiation." + radiation_class
         radiation_module = importlib.import_module(radiation_module_name)
         self.radiation = radiation_module.Radiation(self)
-        
         self.tau_dr_shielding = self.tau_dr(self.rho_shielding)
+        # initialize grid and integrator # 
+        if self.radiation_class != "simple_sed":
+            self.radiation.grid.initialize_all(init=True)
+            self.radiation.grid.update_all(init=True)
+            self.radiation.integrator = integration.Integrator(self.R_g,
+                    self.radiation.grid.density_grid.values,
+                    self.radiation.grid.grid_r_range,
+                    self.radiation.grid.grid_z_range,
+                    self.radiation.grid.mdot_grid,
+                    self.radiation.grid.uv_fraction_grid,
+                    self.radiation.grid.grid_disk_range,
+                    epsrel=1e-3,
+                    epsabs=0)
+
         # compute initial radii of streamlines
         if log_spaced == True:
             dr_log = (np.log10(self.lines_r_max) - np.log10(self.lines_r_min)) / (self.nr - 1)
@@ -168,9 +171,8 @@ class Qwind:
         
         self.lines = []  # list of streamline objects
         self.lines_hist = []  # save all iterations info
-                #integration.grid = self.density_grid
 
-        self.plotter = Plotter(self)
+        self.plotter = Plotter(self.radiation.grid)
         self.first_iter = True
         self.iteration_info = []
         #if radiation_class == "qsosed":
@@ -181,7 +183,7 @@ class Qwind:
         Keplerian tangential velocity in units of c.
 
         Args:
-            r : r coordinate in Rg.
+            r : r coordinate in R_g.
         Returns:
             v_phi: tangential velocity in units of c.
         """
@@ -205,7 +207,7 @@ class Qwind:
         """ 
         Returns the Eddington Luminosity. 
         """
-        return const.EMISSIVITY_CONSTANT * self.RG
+        return const.EMISSIVITY_CONSTANT * self.R_g
 
     def thermal_velocity(self, T):
         """
@@ -225,7 +227,7 @@ class Qwind:
         density : float
             shielding density.
         """
-        tau_dr = const.SIGMA_T * self.mu * density * self.RG
+        tau_dr = const.SIGMA_T * self.mu * density * self.R_g
         return tau_dr
 
     def line(self,
@@ -245,9 +247,9 @@ class Qwind:
         Parameters
         -----------
         r_0 : float
-            Initial radius in Rg units.
+            Initial radius in R_g units.
         z_0: float
-            Initial height in Rg units.
+            Initial height in R_g units.
         rho_0 : float
             Initial number density. Units of 1/cm^3.
         T : float
@@ -257,7 +259,7 @@ class Qwind:
         v_z_0 : float
             Initial vertical velocity in units of cm/s.
         dt : float
-            Timestep in units of Rg/c.
+            Timestep in units of R_g/c.
         """
         if derive_from_ss:
             #z_0 = self.radiation.sed_class.disk_scale_height(r_0)
@@ -330,16 +332,9 @@ class Qwind:
         for i in range(0, self.iterations):
             print(f"Iteration {i+1} of {self.iterations}")
             if (self.radiation_class == "qsosed") and ("old_taus" not in self.modes) and (not self.first_iter):
-                self.radiation.initialize_all_grids()
-                self.radiation.integrator.__init__(self.RG,
-                                                    grid.DENSITY_GRID,
-                                                    grid.GRID_R_RANGE,
-                                                    grid.GRID_Z_RANGE,
-                                                    grid.MDOT_GRID,
-                                                    grid.UV_FRACTION_GRID,
-                                                    grid.GRID_DISK_RANGE,
-                                                    epsrel=1e-3,
-                                                    epsabs=0)
+                self.radiation.grid.initialize_all()
+                self.radiation.integrator.update(self.radiation.grid)
+
             self.lines = []
             for i, r in enumerate(self.lines_r_range[:-1]):
                 self.lines.append(self.line(r_0=r,
@@ -358,7 +353,7 @@ class Qwind:
                 #    print("Terminating gracefully...")
                 #    pass
                 if self.radiation_class == "qsosed" and "uv_interp" not in self.modes and "dont_update_grids" not in self.modes: 
-                    self.radiation.update_all_grids()
+                    self.radiation.grid.update_all(init=False)
                     if show_plots:
                         self.plotter.plot_all_grids()
                         plt.show()
@@ -366,12 +361,12 @@ class Qwind:
             if self.radiation_class != "simple_sed": 
                 if "uv_interp" not in self.modes:
                     self.radiation.initialize_all_grids()
-                self.radiation.update_all_grids()
+                self.radiation.grid.update_all()
                 self.radiation.compute_mass_accretion_rate_grid(self.lines)
                 if show_plots:
                     self.plotter.plot_all_grids()
                     plt.show()
-                    plt.plot(grid.GRID_DISK_RANGE, grid.MDOT_GRID)
+                    plt.plot(self.radiation.grid.grid_disk_range, self.radiation.grid.mdot_grid)
                     plt.show()
             self.iteration_info.append([self.mdot_w, self.kinetic_luminosity, self.angle, self.v_terminal])
             if "uv_interp" in self.modes:
@@ -385,7 +380,7 @@ class Qwind:
         mdot_w_total = 0
         width = line.line_width
         area = 2 * np.pi * ((line.r_0 + width/2.)**2. -
-                            (line.r_0 - width/2.)**2) * self.RG**2.
+                            (line.r_0 - width/2.)**2) * self.R_g**2.
         mdot_w = line.rho_0 * const.M_P * line.v_T_0 * const.C * area
         return mdot_w
     
@@ -395,7 +390,7 @@ class Qwind:
         """
         dR = self.lines_r_range[1] - self.lines_r_range[0]
         area = 2 * np.pi * ((line.r_0 + dR/2.)**2. -
-                            (line.r_0 - dR/2.)**2) * self.RG**2.
+                            (line.r_0 - dR/2.)**2) * self.R_g**2.
         mdot_w = line.rho_0 * const.M_P * line.v_T_0 * const.C * area
         kl = 0.5 * mdot_w * (const.C * line.v_T_hist[-1])**2
         return kl 
