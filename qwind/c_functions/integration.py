@@ -4,7 +4,9 @@ from qwind import constants
 from ctypes import *
 from scipy import LowLevelCallable
 from scipy.integrate import nquad
+from numpy.ctypeslib import ndpointer
 
+#c_array = ndpointer(c_double, flags="C_CONTIGUOUS")
 c_double_p = POINTER(c_double)
 
 class Parameters(Structure):
@@ -33,6 +35,11 @@ try:
     lib = CDLL(os.path.join(libdir, "qwind_library.so"))
 except:
     lib = CDLL(os.path.abspath("qwind_library.so"))
+
+test_c = lib.test
+test_c.argtypes = [POINTER(Parameters)]
+def test(parameters):
+    test_c(byref(parameters))
     
 tau_uv_disk_blob_c = lib.tau_uv_disk_blob
 tau_uv_disk_blob_c.restype = c_double
@@ -42,47 +49,75 @@ nt_rel_factors = lib.nt_rel_factors
 nt_rel_factors.restype = c_double
 nt_rel_factors.argtypes = (c_double, c_double, c_double)
 
-#array_initializer = lib.initialize_arrays
-#array_initializer.restype = c_void_p
-#array_initializer.argtypes = (POINTER(c_double),
-#        POINTER(c_double),
-#        POINTER(c_double),
-#        POINTER(c_double),
-#        POINTER(c_double),
-#        POINTER(c_double),
-#        c_size_t,
-#        c_size_t,
-#        c_size_t,
-#        c_double,
-#        c_double)
-#
 workspace_initializer = lib.initialize_integrators
 
 integrate_r = lib.integrate_r
 integrate_r.restype = c_double
-integrate_r.argtypes = [Parameters] 
+integrate_r.argtypes = [POINTER(Parameters)] 
 
 integrate_z = lib.integrate_z
 integrate_z.restype = c_double
-integrate_z.argtypes = [Parameters]
+integrate_z.argtypes = [POINTER(Parameters)]
 
 integrate_notau_r = lib.integrate_notau_r
 integrate_notau_r.restype = c_double
-integrate_notau_r.argtypes = [Parameters]
+integrate_notau_r.argtypes = [POINTER(Parameters)]
 
 integrate_notau_z = lib.integrate_notau_z
 integrate_notau_z.restype = c_double
-integrate_notau_z.argtypes = [Parameters]
+integrate_notau_z.argtypes = [POINTER(Parameters)]
+
+integrate_simplesed_r = lib.integrate_simplesed_r
+integrate_simplesed_r.restype = c_double
+integrate_simplesed_r.argtypes = [POINTER(Parameters)] 
+
+integrate_simplesed_z = lib.integrate_simplesed_z
+integrate_simplesed_z.restype = c_double
+integrate_simplesed_z.argtypes = [POINTER(Parameters)]
+
 
 get_arg_c = lib.get_arg
 get_arg_c.restype = c_int
-get_arg_c.argtypes = (c_double, POINTER(c_double), c_size_t)
+get_arg_c.argtypes = (c_double, c_double_p, c_size_t)
 
 
 def get_arg(value, array):
     n = len(array)
-    array_t = array.ctypes.data_as(c_double_p)
-    return get_arg_c(value, array_t, n)
+    array_p = array.ctypes.data_as(array)
+    return get_arg_c(value, array_p, n)
+
+class IntegratorSimplesed:
+
+    def __init__(self,
+            Rg,
+            r_min = 6.,
+            r_max = 1600.,
+            epsabs=0,
+            epsrel=1e-4,
+            astar =0.,
+            isco = 6.):
+
+        self.params = Parameters(
+                r = 0.,
+                z = 0.,
+                r_d = 0.,
+                R_g = Rg,
+                astar = astar,
+                isco = isco,
+                r_min = r_min,
+                r_max = r_max,
+                epsabs = epsabs,
+                epsrel = epsrel,
+                )
+        workspace_initializer()
+   
+    def integrate(self, r, z):
+        self.params.r = r
+        self.params.z = z
+        r_int = integrate_simplesed_r(byref(self.params))
+        z_int = integrate_simplesed_z(byref(self.params))
+        return [r_int, z_int]
+
 
 class Integrator:
 
@@ -102,50 +137,28 @@ class Integrator:
             isco = 6.):
 
         self.params = Parameters(
-                density_grid = density_grid.ravel().ctypes.data_as(c_double_p),
+                r = 0.,
+                z = 0.,
+                r_d = 0.,
                 grid_r_range = grid_r_range.ctypes.data_as(c_double_p),
                 grid_z_range = grid_z_range.ctypes.data_as(c_double_p),
-                grid_disk_range = grid_disk_range.ctypes.data_as(c_double_p),
-                mdot_grid = mdot_grid.ctypes.data_as(c_double_p),
+                n_r = len(grid_r_range),
+                n_z = len(grid_z_range),
+                density_grid = density_grid.ctypes.data_as(c_double_p), 
                 uv_fraction_grid = uv_fraction_grid.ctypes.data_as(c_double_p),
-                epsabs = epsabs,
-                epsrel = c_double(epsrel),
+                mdot_grid = mdot_grid.ctypes.data_as(c_double_p),
+                grid_disk_range = grid_disk_range.ctypes.data_as(c_double_p),
+                n_disk = len(grid_disk_range),
                 R_g = Rg,
                 astar = astar,
                 isco = isco,
                 r_min = r_min,
                 r_max = r_max,
-                n_r = len(grid_r_range),
-                n_z = len(grid_z_range),
-                n_disk = len(grid_disk_range),
+                epsabs = epsabs,
+                epsrel = epsrel,
                 )
         workspace_initializer()
-        #self.initialize()
-
-    #def initialize(self):
-    #    density_grid_p = self.density_grid.ctypes.data_as(c_double_p)
-    #    grid_r_range_p = self.grid_r_range.ctypes.data_as(c_double_p)
-    #    grid_z_range_p = self.grid_z_range.ctypes.data_as(c_double_p)
-    #    mdot_grid_p = self.mdot_grid.ctypes.data_as(c_double_p)
-    #    uv_fraction_grid_p = self.uv_fraction_grid.ctypes.data_as(c_double_p)
-    #    grid_disk_range_p = self.grid_disk_range.ctypes.data_as(c_double_p)
-    #    #array_initializer(grid_r_range_p,
-    #    #        grid_r_range_p,
-    #    #        density_grid_p,
-    #    #        mdot_grid_p,
-    #    #        uv_fraction_grid_p,
-    #    #        grid_disk_range_p,
-    #    #        len(self.grid_r_range),
-    #    #        len(self.grid_z_range),
-    #    #        len(self.grid_disk_range),
-    #    #        self.Rg,
-    #    #        self.epsrel,
-    #    #        )
-    #    self.params = Parameters(10., 10.)
-    #    user_data = cast(pointer(self.params), c_void_p)
-    #    self.integrand_r_llc = LowLevelCallable(integrand_r, user_data)
-    #    self.integrand_z_llc = LowLevelCallable(integrand_z, user_data)
-
+   
     def update(self, grid):
         self.params.density_grid = grid.density_grid.values.ctypes.data_as(c_double_p)
         self.params.mdot_grid = grid.mdot_grid.ctypes.data_as(c_double_p)
@@ -153,30 +166,17 @@ class Integrator:
     def integrate(self, r, z):
         self.params.r = r
         self.params.z = z
-        r_int = integrate_r(self.params) 
-        z_int = integrate_z(self.params) 
+        r_int = integrate_r(byref(self.params))
+        z_int = integrate_z(byref(self.params))
         return [r_int, z_int]
 
     def integrate_notau(self, r, z):
         self.params.r = r
         self.params.z = z
-        r_int = integrate_notau_r(self.params) 
-        z_int = integrate_notau_z(self.params) 
+        r_int = integrate_notau_r(byref(self.params))
+        z_int = integrate_notau_z(byref(self.params))
         return [r_int, z_int]
     
-    #def integrate_scipy(self, r, z):
-    #    self.params.r = r
-    #    self.params.z = z
-    #    r_int, r_error = nquad(self.integrand_r_llc, ((6., 1600.), (0., np.pi)),
-    #            opts=[{'points': [], 'epsabs' : self.epsabs, 'epsrel': self.epsrel},
-    #                {'points': [], 'epsabs' : self.epsabs, 'epsrel' : self.epsrel}])
-    #    z_int, z_error = nquad(self.integrand_z_llc, ((6., 1600.), (0., np.pi)),
-    #            opts=[{'points': [], 'epsabs' : self.epsabs, 'epsrel': self.epsrel},
-    #                {'points': [], 'epsabs' : self.epsabs, 'epsrel' : self.epsrel}])
-    #    r_int = 2 * z * r_int 
-    #    z_int = 2 * z**2 * z_int
-    #    return [r_int, z_int]
-
     def tau_uv_disk_blob(self, r_d, phi_d, r, z):
         tau_uv = tau_uv_disk_blob_c(r_d, phi_d, r, z)
         return tau_uv * constants.SIGMA_T * self.params.R_g

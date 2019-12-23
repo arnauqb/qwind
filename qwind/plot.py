@@ -85,23 +85,23 @@ class Plotter:
 
         for i, grid in enumerate(grids):
             i = i + 1
-            if i == 2:
+            if i == 1:
+                cm =ax[i].pcolormesh(self.grid.grid_r_range,
+                        self.grid.grid_z_range,
+                        grid.T,
+                        norm=LogNorm(1e2, 1e10),
+                        cmap=cmaps[i-1])
+            elif i == 2:
                 cm =ax[i].pcolormesh(self.grid.grid_r_range,
                         self.grid.grid_z_range,
                         grid.T,
                         norm=LogNorm(1e-5, 1e7),
-                        cmap=cmaps[i-1])
-            elif i == 3:
-                cm =ax[i].pcolormesh(self.grid.grid_r_range,
-                        self.grid.grid_z_range,
-                        grid.T,
-                        norm=LogNorm(1e-2, 100),
                         cmap=cmaps[i-1])
             else:
                 cm =ax[i].pcolormesh(self.grid.grid_r_range,
                         self.grid.grid_z_range,
                         grid.T,
-                        norm=LogNorm(1e-5, 1e7),
+                        norm=LogNorm(1e-3, 1e2),
                         cmap=cmaps[i-1])
             plt.colorbar(cm, ax=ax[i]) 
             ax[i].set_xlabel("R [Rg]")

@@ -5,8 +5,9 @@ This module handles the radiation transfer aspects of Qwind.
 import numpy as np
 from scipy import integrate, interpolate, optimize
 import qwind.constants as const
-from qwind.integration import qwind1 as integration 
+#from qwind.integration import qwind1 as integration_old
 from qsosed import sed
+from qwind.c_functions import integration
 
 
 class Radiation:
@@ -17,10 +18,11 @@ class Radiation:
 
     def __init__(self, wind):
         self.wind = wind
-        self.qsosed = sed.SED(M=self.wind.M / const.M_SUN, mdot=self.wind.mdot)
+        #self.qsosed = sed.SED(M=self.wind.M / const.M_SUN, mdot=self.wind.mdot)
         self.xray_fraction = self.wind.f_x 
         self.uv_fraction = 1 - self.wind.f_x
         self.dr = (self.wind.lines_r_max - self.wind.lines_r_min) / (self.wind.nr - 1)
+        self.wind.r_init = self.wind.disk_r_min + self.dr / 2.
         self.wind.tau_dr_0 = self.wind.tau_dr(self.wind.rho_shielding)
         self.xray_luminosity = self.wind.mdot * \
             self.wind.eddington_luminosity * self.xray_fraction
@@ -65,6 +67,13 @@ class Radiation:
                 ETAMAX_INTERP_ETAMAX_VALUES[0],
                 ETAMAX_INTERP_ETAMAX_VALUES[-1]),
             kind='cubic')  # important! xi is log here
+        self.integrator = integration.IntegratorSimplesed(self.wind.R_g,
+                self.wind.disk_r_min,
+                self.wind.disk_r_max,
+                0,
+                self.wind.epsrel,
+                self.wind.spin, 
+                self.wind.disk_r_min)
 
     def optical_depth_uv(self, r, z, r_0, tau_dr, tau_dr_0):
         """
@@ -327,10 +336,11 @@ class Radiation:
             i_aux = integration.qwind_integration_dblquad(
                 r, z, self.wind.disk_r_min, self.wind.disk_r_max, **kwargs)
         else:
-            i_aux = integration.qwind_integration_rel(
-                r, z, self.wind.disk_r_min, self.wind.disk_r_max, **kwargs)
-            error = i_aux[2:4]
-            self.int_error_hist.append(error)
+            i_aux = self.integrator.integrate(r,z)
+            #i_aux = integration_old.qwind_integration_rel(
+            #    r, z, self.wind.disk_r_min, self.wind.disk_r_max, **kwargs)
+            #error = i_aux[2:4]
+            #self.int_error_hist.append(error)
 
         self.int_hist.append(i_aux)
         if no_tau_z == True:

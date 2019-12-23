@@ -42,6 +42,9 @@ class Qwind:
                  lines_r_max=1600,
                  disk_r_min=6.,
                  disk_r_max=1600,
+                 n_grid_r=None,
+                 n_grid_z=None,
+                 n_grid_disk=None,
                  f_x=0.15,
                  f_uv=None,
                  T=2e6,
@@ -50,13 +53,14 @@ class Qwind:
                  rho_shielding=2e8,
                  intsteps=1,
                  nr=20,
-                 d_max=1e3,
+                 d_max=3e3,
                  save_dir=None,
                  radiation_class="simple_sed",
                  solver="ida",
                  iterations = 1,
                  refresh_grids = True,
                  log_spaced = False,
+                 epsrel=1e-3,
                  n_cpus=1):
         """
         Parameters
@@ -102,6 +106,8 @@ class Qwind:
         self.R_g = const.G * self.M / (const.C ** 2)  # gravitational radius
         self.mdot = mdot
         self.spin = spin
+        self.epsrel = epsrel
+
         self.mu = mu
         self.disk_r_min = disk_r_min
         self.disk_r_max = disk_r_max
@@ -109,14 +115,15 @@ class Qwind:
         self.nr = nr + 1 # nr denotes the borders between lines, so...
         self.d_max = d_max
         self.rho_shielding = rho_shielding
+        self.n_grid_r = n_grid_r
+        self.n_grid_z = n_grid_z
+        self.n_grid_disk = n_grid_disk
         if solver == "euler":
             from qwind.streamline.euler import streamline as streamline_solver
         elif solver == "rk4":
             from qwind.streamline.rk4 import streamline as streamline_solver 
         elif solver == "ida":
             from qwind.streamline.ida import streamline as streamline_solver 
-        elif solver == "ida_interp":
-            from qwind.streamline.ida_interp import streamline as streamline_solver 
         else:
             print("solver not found")
             raise Exception
@@ -145,7 +152,7 @@ class Qwind:
                     self.radiation.grid.mdot_grid,
                     self.radiation.grid.uv_fraction_grid,
                     self.radiation.grid.grid_disk_range,
-                    epsrel=1e-3,
+                    epsrel=epsrel,
                     epsabs=0)
 
         # compute initial radii of streamlines
@@ -157,7 +164,6 @@ class Qwind:
             dr = (self.lines_r_max - self.lines_r_min) / (self.nr - 1)
             self.lines_r_range = np.array([self.lines_r_min + (i-0.5) * dr for i in range(1, self.nr + 1)])
         self.lines_widths = np.diff(self.lines_r_range)
-        self.r_init = self.lines_r_range[0]
 
                 
         # create directory if it doesnt exist. Warning, this overwrites previous outputs.
@@ -169,10 +175,11 @@ class Qwind:
                 pass
 
         
+        if radiation_class != "simple_sed":
+            self.plotter = Plotter(self.radiation.grid)
         self.lines = []  # list of streamline objects
         self.lines_hist = []  # save all iterations info
 
-        self.plotter = Plotter(self.radiation.grid)
         self.first_iter = True
         self.iteration_info = []
         #if radiation_class == "qsosed":
@@ -331,7 +338,7 @@ class Qwind:
             plt.show()
         for i in range(0, self.iterations):
             print(f"Iteration {i+1} of {self.iterations}")
-            if (self.radiation_class == "qsosed") and ("old_taus" not in self.modes) and (not self.first_iter):
+            if (self.radiation_class == "qsosed") and ("old_taus" not in self.modes) and (not self.first_iter) and ("uv_interp" not in self.modes):
                 self.radiation.grid.initialize_all()
                 self.radiation.integrator.update(self.radiation.grid)
 
@@ -352,7 +359,7 @@ class Qwind:
                 #except IDAError:
                 #    print("Terminating gracefully...")
                 #    pass
-                if self.radiation_class == "qsosed" and "uv_interp" not in self.modes and "dont_update_grids" not in self.modes: 
+                if self.radiation_class != "simple_sed" and "uv_interp" not in self.modes and "dont_update_grids" not in self.modes: 
                     self.radiation.grid.update_all(init=False)
                     if show_plots:
                         self.plotter.plot_all_grids()
@@ -360,7 +367,7 @@ class Qwind:
             self.mdot_w, self.kinetic_luminosity, self.angle, self.v_terminal = self.compute_wind_properties()
             if self.radiation_class != "simple_sed": 
                 if "uv_interp" not in self.modes:
-                    self.radiation.initialize_all_grids()
+                    self.radiation.initialize_all()
                 self.radiation.grid.update_all()
                 self.radiation.compute_mass_accretion_rate_grid(self.lines)
                 if show_plots:
@@ -388,7 +395,7 @@ class Qwind:
         """
         Computes wind kinetic luminosity
         """
-        dR = self.lines_r_range[1] - self.lines_r_range[0]
+        dR = line.line_width #self.lines_r_range[1] - self.lines_r_range[0]
         area = 2 * np.pi * ((line.r_0 + dR/2.)**2. -
                             (line.r_0 - dR/2.)**2) * self.R_g**2.
         mdot_w = line.rho_0 * const.M_P * line.v_T_0 * const.C * area

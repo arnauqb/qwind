@@ -6,12 +6,9 @@ from numpy.ctypeslib import ndpointer
 from numba import njit, jit
 import numba as nb
 from ctypes import *
-
 """
 Python Wrapper for C functions.
 """
-
-
 # Load C shared library
 libdir = os.path.dirname(__file__)
 libname = "qwind_library.so"
@@ -32,9 +29,10 @@ funclib.update_tau_x_grid.restype = ctypes.c_void_p
 def update_tau_x_grid(density_grid, ionization_grid, grid_r_range, grid_z_range):
     n_r = len(grid_r_range)
     n_z = len(grid_z_range)
-    density_grid = density_grid.ravel()
-    ionization_grid = ionization_grid.ravel()
-    tau_x_grid = np.empty((n_r, n_z)).ravel()
+    #density_grid = density_grid.flatten()
+    #ionization_grid = ionization_grid.flatten()
+    #tau_x_grid = np.empty((n_r, n_z)).flatten()
+    tau_x_grid = np.empty((n_r, n_z))
     funclib.update_tau_x_grid(density_grid, ionization_grid, tau_x_grid, grid_z_range, grid_r_range, n_r, n_z)
     tau_x_grid = tau_x_grid.reshape(n_r, n_z)
     return tau_x_grid
@@ -75,7 +73,7 @@ funclib.tau_uv.restype = ctypes.c_double
 def tau_uv(r, z, density_grid):
     n_z = density_grid.values.shape[1]
     r_arg, z_arg = density_grid.get_arg(r,z)
-    tau_uv = funclib.tau_uv(r, z, r_arg, z_arg, density_grid.values.ravel(), n_z)
+    tau_uv = funclib.tau_uv(r, z, r_arg, z_arg, density_grid.values, n_z)
     return tau_uv
 
 # optical depth uv disk blob

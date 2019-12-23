@@ -11,8 +11,8 @@ from qwind import grid
 from qwind.c_functions.wrapper import tau_uv as tau_uv_c
 
 
-N_R = 1000
-N_Z = 1001
+N_R = 250 
+N_Z = 251 
 N_DISK = 100
 
 @njit
@@ -42,15 +42,23 @@ class Radiation:
     """
 
     def __init__(self, wind):
+
+        if wind.n_grid_r is None:
+            wind.n_grid_r = N_R
+        if wind.n_grid_z is None:
+            wind.n_grid_z = N_Z
+        if wind.n_grid_disk is None:
+            wind.n_grid_disk = N_DISK
+
         self.wind = wind
         self.qsosed = sed.SED(M=self.wind.M / const.M_SUN,
                 mdot=self.wind.mdot,
-                number_bins_fractions=N_DISK)
+                number_bins_fractions=self.wind.n_grid_disk)
         if "qsosed_geometry" in self.wind.modes:
             self.uv_radial_flux_fraction = self.qsosed.compute_uv_fractions(return_all = False)
             self.xray_fraction = self.qsosed.xray_fraction
             self.uv_fraction = self.qsosed.uv_fraction
-            r_range_aux = np.linspace(self.qsosed.warm_radius, self.qsosed.gravity_radius, N_DISK)
+            r_range_aux = np.linspace(self.qsosed.warm_radius, self.qsosed.gravity_radius, self.wind.n_grid_disk)
             self.FORCE_RADIATION_CONSTANT = 3. / (8. * np.pi * self.wind.eta)
             self.wind.disk_r_min = self.qsosed.warm_radius
             self.wind.disk_r_max = r_range_aux[np.argwhere(self.uv_radial_flux_fraction < 0.05)[0][0]]
@@ -62,7 +70,7 @@ class Radiation:
                 self.uv_fraction = 1 - self.wind.f_x
             else:
                 self.uv_fraction = self.wind.f_uv
-            self.uv_radial_flux_fraction = np.ones(N_DISK)
+            self.uv_radial_flux_fraction = np.ones(self.wind.n_grid_disk)
             self.FORCE_RADIATION_CONSTANT = 3. / (8. * np.pi * self.wind.eta) * self.uv_fraction
         self.mdot_0 = self.wind.mdot
         self.dr = (self.wind.lines_r_max - self.wind.lines_r_min) / (self.wind.nr - 1)
@@ -110,7 +118,7 @@ class Radiation:
                 ETAMAX_INTERP_ETAMAX_VALUES[-1]),
             kind='cubic')  # important! xi is log here
         # new stuff
-        self.grid = grid.Grid(self.wind, n_r=N_R, n_z=N_Z, n_disk=N_DISK)
+        self.grid = grid.Grid(self.wind, n_r=self.wind.n_grid_r, n_z=self.wind.n_grid_z, n_disk=self.wind.n_grid_disk)
         #self.grid.update_all(init=True)
         #self.integrator = integration.Integrator(self.wind.R_g,
         #        self.grid.density_grid,
@@ -127,7 +135,8 @@ class Radiation:
         Returns mass accretion rate at radius r, taking into account the escaped wind.
         Also updates it from the grid file.
         """
-        new_mdot_list = self.grid.mdot_grid.copy()
+        #new_mdot_list = self.grid.mdot_grid.copy()
+        new_mdot_list = self.mdot_0 * np.ones_like(self.grid.mdot_grid)
         lines_escaped = np.array(lines)[np.where([line.escaped for line in lines])[0]]
         accumulated_wind = 0.
         for line in lines_escaped[::-1]:
@@ -300,6 +309,8 @@ class Radiation:
             X-Ray optical depth at the point (r,z)
         """
         if "old_taus" not in self.wind.modes:
+            if es_only:
+                raise NotImplementedError
             tau_x = self.grid.tau_x_grid.get_value(r,z)
             return tau_x
         else:
@@ -312,21 +323,21 @@ class Radiation:
                 assert tau_x >= 0
                 tau_x = min(tau_x,50)
                 return tau_x
+            else:
+                tau_x_0 = max(self.r_x - self.wind.r_init - self.dr/2.,0)
+                tau_x_0 += max(100 * (r_0 - self.dr/2. - self.r_x), 0)
+                distance = np.sqrt(r ** 2 + z ** 2)
+                sec_theta = distance / r
+                delta_r = abs(r - r_0 - self.dr / 2)
+                tau_x = sec_theta * (tau_dr_0 * tau_x_0 + tau_dr *
+                                     self.opacity_x_r(r) * delta_r)
+                tau_x = min(tau_x, 50)
+                if tau_x < 0:
+                    print("warning")
+                tau_x = max(tau_x,0)
 
-            tau_x_0 = max(self.r_x - self.wind.r_init - self.dr/2.,0)
-            tau_x_0 += max(100 * (r_0 - self.dr/2. - self.r_x), 0)
-            distance = np.sqrt(r ** 2 + z ** 2)
-            sec_theta = distance / r
-            delta_r = abs(r - r_0 - self.dr / 2)
-            tau_x = sec_theta * (tau_dr_0 * tau_x_0 + tau_dr *
-                                 self.opacity_x_r(r) * delta_r)
-            tau_x = min(tau_x, 50)
-            if tau_x < 0:
-                print("warning")
-            tau_x = max(tau_x,0)
-
-            assert tau_x >= 0, "X-Ray optical depth cannot be negative!"
-            return tau_x
+                assert tau_x >= 0, "X-Ray optical depth cannot be negative!"
+                return tau_x
 
     def force_multiplier_k(self, xi):
         """
