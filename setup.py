@@ -34,10 +34,10 @@ setup(
     author_email='arnau.quera-bofarull@durham.ac.uk',
     url='https://github.com/arnauq/qwind',
     license=license,
-    packages=['qwind'],
+    packages=find_packages(exclude=('tests', 'docs')),
 #    ext_modules=[module],
     package_data = {'qwind' : ['qwind/integration/qwind_library.so']},
-    #setup_requires=['pbr'],
-    #pbr=True,
+    setup_requires=['pbr'],
+    pbr=True,
     #cmdclass={'install' : CustomInstall},
 )
