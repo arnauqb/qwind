@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
 from setuptools import setup, find_packages
+from Cython.Build import cythonize
+
+
+ext_modules = cythonize("qwind/streamline/ida.pyx")
 
 with open('README.md') as f:
     readme = f.read()
@@ -19,4 +23,5 @@ setup(
     packages=find_packages(exclude=('tests', 'docs')),
     setup_requires=['pbr'],
     pbr=True,
+    ext_modules=ext_modules,
 )

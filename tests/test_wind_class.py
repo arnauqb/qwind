@@ -46,9 +46,9 @@ def test_initial_parameters():
     testing.assert_almost_equal(TAU_DR_0, wind.tau_dr_0)
 
     NUM_OF_STREAMLINES = 20
-    dr = (OUTER_RADIUS - INNER_RADIUS) / (NUM_OF_STREAMLINES - 1)
+    dr = (OUTER_RADIUS - INNER_RADIUS) / (NUM_OF_STREAMLINES)
     assert wind.lines_r_range[0] == (INNER_RADIUS + 0.5 * dr)
-    assert wind.lines_r_range[-1] == (INNER_RADIUS + (20 - 0.5) * dr)
+    assert wind.lines_r_range[-1] == (INNER_RADIUS + (21 - 0.5) * dr)
 
 
 def test_v_kepler():
@@ -76,47 +76,3 @@ def test_tau_dr():
     testing.assert_almost_equal(ratio, 2e2)
 
 
-def test_line():
-    line = wind.line(
-        r_0=420,
-        z_0=10,
-        rho_0=2e11,
-        T=3e8,
-        v_r_0=0.5,
-        v_z_0=4e7,
-        dt=2,
-    )
-    assert line.r_0 == 420
-    assert line.z_0 == 10
-    assert line.rho_0 == 2e11
-    assert line.T == 3e8
-    assert line.v_r == 0.5 / constants.C
-    assert line.v_z_0 == 4e7 / constants.C
-    assert line.dt == 2
-
-
-def test_start_lines():
-    v_z_0 = 1e5
-    niter = 50
-    lines = wind.start_lines(v_z_0 = v_z_0, niter = niter)
-    assert len(lines) == 20
-    assert lines[0].r_hist[0] == wind.lines_r_range[0]
-    assert lines[-1].r_hist[0] == wind.lines_r_range[-1]
-    V_Z_0_C = 1e5 / constants.C
-    for line in lines:
-        assert line.v_z_hist[0] == V_Z_0_C
-
-
-def test_compute_wind_mass_loss():
-    lines = wind.start_lines(rho_0=2e8, v_z_0=1e7, niter=0)
-    line = wind.line(r_0=wind.lines_r_range[2], rho_0=2e8, v_z_0=1e7)
-    line.iterate(niter=500000)
-    assert line.escaped is True
-    wind.lines[2] = line
-    mdot_w = wind.compute_wind_mass_loss()
-    r = wind.lines_r_range[2]
-    dr = wind.lines_r_range[2] - wind.lines_r_range[1]
-    mdot_exp = 2 * np.pi * ((r + dr/2.)**2 - (r - dr/2.)**2) * wind.RG**2
-    mdot_exp = mdot_exp * lines[2].rho_0 * \
-        constants.M_P * lines[2].v_T_0 * constants.C
-    testing.assert_almost_equal(mdot_exp / mdot_w, 1.)
