@@ -20,9 +20,9 @@ Prerequisites
 
 See the requirements.txt file. Also, due to a current error on the Assimulo package in PyPI, it is required to install it through conda.
 
-    ```
-    conda install -c conda-forge assimulo
-    ```
+```
+conda install -c conda-forge assimulo
+```
 
 Installing
 ----------
