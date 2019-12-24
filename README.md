@@ -18,17 +18,17 @@ Getting started
 Prerequisites
 -------------
 
-The required Python modules are
+    See the requirements.txt file. Also, due to a current error on the Assimulo package in PyPI, it is required to install it through conda.
 
-``
-scipy
-numba
-``
+    ```
+    conda install -c conda-forge assimulo
+    ```
+
 
 Installing
 ----------
 
-The code can be installed with pip
+Once Assimulo has been installed through conda, the code can be installed with pip
 
 ```
 pip install qwind
