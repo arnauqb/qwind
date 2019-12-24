@@ -354,7 +354,6 @@ class Qwind:
                                             **kwargs,
                                             ))
             for i, line in enumerate(self.lines):
-                #print(f"Line {i+1} of {len(self.lines)}")
                 line.iterate(niter=niter)
                 #except IDAError:
                 #    print("Terminating gracefully...")

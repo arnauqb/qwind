@@ -248,7 +248,10 @@ class streamline():
             self.escaped = True
         a_T = np.sqrt(solver.yd[2]**2 + solver.yd[3]**2)
         self.update_radiation(r, z, v_T, a_T, save_hist=True)
-        self.wind.progress_bar.update(1)
+        try:
+            self.wind.progress_bar.update(1)
+        except:
+            pass
         if d > self.d_max:
             if self.escaped:
                 raise Escape 
@@ -442,5 +445,8 @@ class streamline():
             #else:
             #    print("Line stalled!")
             #    pass
-        self.wind.progress_bar.clear()
-        self.wind.progress_bar.reset()
+        try:
+            self.wind.progress_bar.clear()
+            self.wind.progress_bar.reset()
+        except:
+            pass

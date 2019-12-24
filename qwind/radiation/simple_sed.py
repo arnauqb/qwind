@@ -22,7 +22,7 @@ class Radiation:
         self.xray_fraction = self.wind.f_x 
         self.uv_fraction = 1 - self.wind.f_x
         self.dr = (self.wind.lines_r_max - self.wind.lines_r_min) / (self.wind.nr - 1)
-        self.wind.r_init = self.wind.disk_r_min + self.dr / 2.
+        self.wind.r_init = self.wind.lines_r_min + self.dr / 2.
         self.wind.tau_dr_0 = self.wind.tau_dr(self.wind.rho_shielding)
         self.xray_luminosity = self.wind.mdot * \
             self.wind.eddington_luminosity * self.xray_fraction
@@ -208,7 +208,7 @@ class Radiation:
             X-Ray optical depth at the point (r,z)
         """
         if es_only:
-            delta_r_0 = max(r_0 - self.wind.r_init - self.dr/2.,0)
+            delta_r_0 = max(r_0 - self.wind.lines_r_min,0)
             distance = np.sqrt(r ** 2 + z ** 2)
             sec_theta = distance / r
             delta_r = abs(r - r_0 - self.dr / 2)
@@ -217,7 +217,7 @@ class Radiation:
             tau_x = min(tau_x,50)
             return tau_x
 
-        tau_x_0 = max(self.r_x - self.wind.r_init - self.dr/2.,0)
+        tau_x_0 = max(self.r_x - self.wind.lines_r_min,0)
         tau_x_0 += max(100 * (r_0 - self.dr/2. - self.r_x), 0)
         distance = np.sqrt(r ** 2 + z ** 2)
         sec_theta = distance / r

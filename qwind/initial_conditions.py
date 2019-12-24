@@ -69,6 +69,10 @@ class InitialConditions:
         n = rho / (self.mu * constants.M_P)
         return n
 
+    def velocity(self,r):
+        T = self.T_simple(r)
+        return self.thermal_velocity(T)
+
 
 
 

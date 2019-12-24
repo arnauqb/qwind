@@ -300,6 +300,8 @@ double integrate_notau_r(parameters *params)
     result = 2. * PARAMS->z * result;
     return result;
 }
+
+// simple sed
 double integrate_simplesed_z_phi_d(double phi_d, void *params)
 {
     double integrand_value = 0;
