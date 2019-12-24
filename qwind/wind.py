@@ -281,7 +281,10 @@ class Qwind:
         niter : int 
             Number of timesteps.
         """
-        self.progress_bar = tqdm(total=10000)
+        try:
+            self.progress_bar = tqdm(total=10000)
+        except:
+            print("progress bar support if you install jupyter widgets")
         self.lines = []
         for i, r in enumerate(self.lines_r_range[:-1]):
             self.lines.append(self.line(r_0=r,
