@@ -15,6 +15,7 @@ install:
     # Replace dep1 dep2 ... with your dependencies
     - conda create -q -n test-environment python=$TRAVIS_PYTHON_VERSION
     - conda install -c conda-forge assimulo gsl
+    - make
     - conda activate test-environment
     - python setup.py install
     - pip install -r requirements.txt

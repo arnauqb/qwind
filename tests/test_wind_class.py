@@ -23,7 +23,6 @@ wind = wind.Qwind(
     intsteps=1,
     nr=20,
     save_dir=None,
-    n_cpus=1,
 )
 
 
