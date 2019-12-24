@@ -27,21 +27,18 @@ wind = wind.Qwind(
 
 
 def test_initial_parameters():
-    SCHW_RADIUS_2E8_CM = 29532500761002.49
-    testing.assert_almost_equal(SCHW_RADIUS_2E8_CM, wind.RG)
+    SCHW_RADIUS_2E8_CM =  29532500761002.496
+    testing.assert_almost_equal(wind.R_g, SCHW_RADIUS_2E8_CM)
 
-    EDD_LUMIN = 2.51413032723893e+46
-    testing.assert_almost_equal(EDD_LUMIN, wind.eddington_luminosity)
-
-    BOL_LUMINOSITY = 0.5 * wind.eddington_luminosity
-    testing.assert_equal(BOL_LUMINOSITY, wind.bol_luminosity)
+    EDD_LUMIN = 2.5141303596935816e+46
+    testing.assert_almost_equal(wind.eddington_luminosity, EDD_LUMIN)
 
     INNER_RADIUS = 200  # 2 * 8.901985418630156
     OUTER_RADIUS = 1600  # 1354.4151286369886
     testing.assert_almost_equal(INNER_RADIUS, wind.lines_r_min)
     testing.assert_almost_equal(OUTER_RADIUS, wind.lines_r_max)
 
-    TAU_DR_0 = 2e8 * constants.SIGMA_T * wind.RG
+    TAU_DR_0 = 2e8 * constants.SIGMA_T * wind.R_g
     testing.assert_almost_equal(TAU_DR_0, wind.tau_dr_0)
 
     NUM_OF_STREAMLINES = 20
@@ -62,8 +59,8 @@ def test_v_esc():
 
 def test_thermal_velocity():
     T = 2e6
-    V_AT_2E6 = 0.0004285850044051556  # in c units
-    testing.assert_equal(V_AT_2E6, wind.thermal_velocity(2e6))
+    V_AT_2E6 = 0.0004285850044051556  # in c units  
+    testing.assert_almost_equal(wind.thermal_velocity(2e6), V_AT_2E6)
 
 
 def test_tau_dr():

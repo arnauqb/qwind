@@ -86,8 +86,8 @@ class Radiation:
         Returns:
             UV optical depth at point (r,z) 
         """
-        delta_r_0 = abs(r_0 - self.wind.r_init)
-        delta_r = abs(r - r_0 - self.dr/2)
+        delta_r_0 = abs(r_0 - self.wind.lines_r_min)
+        delta_r = abs(r - (r_0 - self.dr/2))
         distance = np.sqrt(r**2 + z**2)
         sec_theta = distance / r
         tau_uv = sec_theta * (delta_r_0 * tau_dr_0 + delta_r * tau_dr)
@@ -200,7 +200,7 @@ class Radiation:
             delta_r_0 = max(r_0 - self.wind.lines_r_min,0)
             distance = np.sqrt(r ** 2 + z ** 2)
             sec_theta = distance / r
-            delta_r = abs(r - r_0 - self.dr / 2)
+            delta_r = abs(r - (r_0 - self.dr / 2))
             tau_x = sec_theta * (tau_dr_0 * delta_r_0 + tau_dr * delta_r)
             assert tau_x >= 0
             tau_x = min(tau_x,50)

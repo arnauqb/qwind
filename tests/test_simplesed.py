@@ -29,7 +29,7 @@ radiation = wind.Qwind(
 def test_initial_parameters():
     testing.assert_equal(radiation.wind.lines_r_min, 200)
     testing.assert_equal(radiation.wind.lines_r_max, 1600)
-    testing.assert_approx_equal(radiation.r_x, 293.9112153854)
+    testing.assert_approx_equal(radiation.r_x, 293.2373913577438)
     testing.assert_equal(radiation.uv_fraction, 0.85)
     testing.assert_equal(radiation.xray_fraction, 0.15)
     testing.assert_approx_equal(
@@ -50,8 +50,7 @@ def test_optical_depth_uv():
     tau_dr_0 = 5e-3
     r = 400
     r_0 = 250
-    r_init = radiation.wind.r_init
-    tau_uv_check = tau_dr * (r - r_0 - radiation.dr/2) + tau_dr_0 * (250 - r_init)
+    tau_uv_check = tau_dr * (r - (r_0 - radiation.dr/2)) + tau_dr_0 * (250 - radiation.wind.lines_r_min)
     testing.assert_approx_equal(radiation.optical_depth_uv(
         400, 0, 250, tau_dr, tau_dr_0), tau_uv_check)
     testing.assert_equal(radiation.optical_depth_uv(400, 1, 250, 0, 0), 0.)
@@ -62,11 +61,11 @@ def test_ionization_parameter():
     xray_lumin_backup = radiation.xray_luminosity
     xray_lumin = 100 
     radiation.xray_luminosity = xray_lumin
-    r = 3 / radiation.wind.RG
-    z = 4 / radiation.wind.RG 
+    r = 3 / radiation.wind.R_g
+    z = 4 / radiation.wind.R_g 
     n = 1e6
     tau_x = 0
-    expected_1 = 4e-6
+    expected_1 = 1/25.
     computed_1 = radiation.ionization_parameter(r, z, tau_x, n)
     radiation.xray_luminosity = xray_lumin_backup 
     testing.assert_approx_equal(computed_1, expected_1)
@@ -98,10 +97,10 @@ def test_opacity_x_r():
 
 def test_sobolev_optical_depth():
     tau_dr = 20
-    v_th = radiation.wind.v_thermal
-    testing.assert_equal(radiation.sobolev_optical_depth(1, 1), v_th)
-    testing.assert_equal(radiation.sobolev_optical_depth(0, 100), 0)
-    testing.assert_equal(radiation.sobolev_optical_depth(tau_dr, 20), v_th)
+    v_th = radiation.wind.thermal_velocity(radiation.wind.T)
+    testing.assert_equal(radiation.sobolev_optical_depth(1, 1, v_th), v_th)
+    testing.assert_equal(radiation.sobolev_optical_depth(0, 100, v_th), 0)
+    testing.assert_equal(radiation.sobolev_optical_depth(tau_dr, 20, v_th), v_th)
 
 
 def test_force_radiation():

@@ -24,29 +24,18 @@ def test_update_density():
         v_r_0=1.,
         dt=3.,
     )
-    line.d = 1000.
+    line.r = 4
+    line.z = 3
     line.v_T = 1e6 / constants.C
-    rho_expected = 0.25 * 5e7
-    testing.assert_almost_equal(line.update_density(), rho_expected)
+    rho_expected = 5e11
+    testing.assert_almost_equal(line.update_density(line.r, line.z, line.v_T), rho_expected)
 
 
 def test_force_gravity():
-    line = ida.streamline(
-        wind_instance.radiation,
-        wind_instance,
-        r_0=500.,
-        z_0=10.,
-        rho_0=1e7,
-        T=5e5,
-        v_z_0=5e6,
-        v_r_0=1.,
-        dt=3.,
-    )
-    line.r = 3
-    line.z = 4
-    line.d = 5
-    force_expected = - np.array([3, 0, 4]) / 125.
-    testing.assert_array_almost_equal(line.force_gravity(), force_expected)
+    r = 3
+    z = 4
+    force_expected = - np.array([3, 4]) / 125.
+    testing.assert_array_almost_equal(ida.force_gravity(r,z), force_expected)
 
 # def test_update_positions():
 #    line = streamline.streamline(
