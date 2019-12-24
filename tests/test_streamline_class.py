@@ -5,14 +5,15 @@ Tests the radiation class
 import numpy as np
 import pytest
 from numpy import testing
-from qwind import constants, streamline, wind
+from qwind import constants, wind
+from qwind.streamline import ida, euler
 
 wind_instance = wind.Qwind()
 # def test_initial_parameters():
 
 
 def test_update_density():
-    line = streamline.streamline(
+    line = ida.streamline(
         wind_instance.radiation,
         wind_instance,
         r_0=500.,
@@ -30,7 +31,7 @@ def test_update_density():
 
 
 def test_force_gravity():
-    line = streamline.streamline(
+    line = ida.streamline(
         wind_instance.radiation,
         wind_instance,
         r_0=500.,
