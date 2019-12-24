@@ -5,9 +5,7 @@ This module handles the radiation transfer aspects of Qwind.
 import numpy as np
 from scipy import integrate, interpolate, optimize
 import qwind.constants as const
-#from qwind.integration import qwind1 as integration_old
-from qsosed import sed
-from qwind.c_functions import integration
+from qwind.integration.integration import IntegratorSimplesed as integrator 
 
 
 class Radiation:
@@ -18,7 +16,6 @@ class Radiation:
 
     def __init__(self, wind):
         self.wind = wind
-        #self.qsosed = sed.SED(M=self.wind.M / const.M_SUN, mdot=self.wind.mdot)
         self.xray_fraction = self.wind.f_x 
         self.uv_fraction = 1 - self.wind.f_x
         self.dr = (self.wind.lines_r_max - self.wind.lines_r_min) / (self.wind.nr - 1)
@@ -67,7 +64,7 @@ class Radiation:
                 ETAMAX_INTERP_ETAMAX_VALUES[0],
                 ETAMAX_INTERP_ETAMAX_VALUES[-1]),
             kind='cubic')  # important! xi is log here
-        self.integrator = integration.IntegratorSimplesed(self.wind.R_g,
+        self.integrator = integrator(self.wind.R_g,
                 self.wind.disk_r_min,
                 self.wind.disk_r_max,
                 0,
@@ -104,14 +101,6 @@ class Radiation:
             print(f"r: {r} \n z : {z} \n r_0 : {r_0}\n tau_dr: {tau_dr} \n tau_dr_0: {tau_dr_0} \n\n")
             raise AssertionError 
         return tau_uv
-
-    def compute_temperature(self, n, R, xi, Tx=1e8):
-        #xi = max(xi, 1e-10)
-        #eq_temp = self.compute_equilibrium_temperature(n, xi, Tx)
-        #disk_temp = self.qsosed.disk_nt_temperature4(R)**(1./4.)
-        #return max(disk_temp, eq_temp)
-        return self.wind.T
-
 
     def ionization_parameter(self, r, z, tau_x, rho):
         """

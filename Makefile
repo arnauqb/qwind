@@ -1,7 +1,7 @@
 CC=gcc
-OBJS = qwind_library.so
+OBJS = qwind/integration/qwind_library.so
 CFLAGS =  -Wall -fPIC -g -shared
-INCLUDE = *.c
+INCLUDE = qwind/integration/*.c
 LIBS = -lm -lgsl -lgslcblas
 
 make:

@@ -1,19 +1,14 @@
 import shutil
 import sys, os
-import importlib
-import matplotlib.pyplot as plt
-from qwind.plot import Plotter
-
 import numpy as np
 import pandas as pd
-from numba import jit, jitclass
 from scipy import interpolate
 
 import qwind.constants as const
-from qwind import utils, grid
+from qwind.radiation import simple_sed
+from qwind import utils
 
 from assimulo.solvers.sundials import IDAError
-from qwind.c_functions import integration
 
 backend = utils.type_of_script()
 if(backend == 'jupyter'):
@@ -42,9 +37,6 @@ class Qwind:
                  lines_r_max=1600,
                  disk_r_min=6.,
                  disk_r_max=1600,
-                 n_grid_r=None,
-                 n_grid_z=None,
-                 n_grid_disk=None,
                  f_x=0.15,
                  f_uv=None,
                  T=2e6,
@@ -55,13 +47,10 @@ class Qwind:
                  nr=20,
                  d_max=3e3,
                  save_dir=None,
-                 radiation_class="simple_sed",
                  solver="ida",
-                 iterations = 1,
-                 refresh_grids = True,
                  log_spaced = False,
                  epsrel=1e-3,
-                 n_cpus=1):
+                 ):
         """
         Parameters
         ----------
@@ -95,12 +84,9 @@ class Qwind:
             If old_integral mode enabled, this refined the integration grid.
         save_dir : str
             Directory to save results.
-        n_cpus: int
-            Number of cpus to use.
         """
         # array containing different modes for debugging #
         self.modes = modes
-        self.iterations = iterations
         # black hole and disc variables #
         self.M = M * const.M_SUN
         self.R_g = const.G * self.M / (const.C ** 2)  # gravitational radius
@@ -115,13 +101,8 @@ class Qwind:
         self.nr = nr + 1 # nr denotes the borders between lines, so...
         self.d_max = d_max
         self.rho_shielding = rho_shielding
-        self.n_grid_r = n_grid_r
-        self.n_grid_z = n_grid_z
-        self.n_grid_disk = n_grid_disk
         if solver == "euler":
             from qwind.streamline.euler import streamline as streamline_solver
-        elif solver == "rk4":
-            from qwind.streamline.rk4 import streamline as streamline_solver 
         elif solver == "ida":
             from qwind.streamline.ida import streamline as streamline_solver 
         else:
@@ -136,25 +117,9 @@ class Qwind:
         self.f_uv = f_uv
 
         # initialize radiation class
-        self.radiation_class = radiation_class
-        radiation_module_name = "qwind.radiation." + radiation_class
-        radiation_module = importlib.import_module(radiation_module_name)
-        self.radiation = radiation_module.Radiation(self)
+        self.radiation = simple_sed.Radiation(self)
         self.tau_dr_shielding = self.tau_dr(self.rho_shielding)
-        # initialize grid and integrator # 
-        if self.radiation_class != "simple_sed":
-            self.radiation.grid.initialize_all(init=True)
-            self.radiation.grid.update_all(init=True)
-            self.radiation.integrator = integration.Integrator(self.R_g,
-                    self.radiation.grid.density_grid.values,
-                    self.radiation.grid.grid_r_range,
-                    self.radiation.grid.grid_z_range,
-                    self.radiation.grid.mdot_grid,
-                    self.radiation.grid.uv_fraction_grid,
-                    self.radiation.grid.grid_disk_range,
-                    epsrel=epsrel,
-                    epsabs=0)
-
+        
         # compute initial radii of streamlines
         if log_spaced == True:
             dr_log = (np.log10(self.lines_r_max) - np.log10(self.lines_r_min)) / (self.nr - 1)
@@ -174,16 +139,9 @@ class Qwind:
             except BaseException:
                 pass
 
-        
-        if radiation_class != "simple_sed":
-            self.plotter = Plotter(self.radiation.grid)
         self.lines = []  # list of streamline objects
         self.lines_hist = []  # save all iterations info
 
-        self.first_iter = True
-        self.iteration_info = []
-        #if radiation_class == "qsosed":
-        #    self.plotter.plot_all_grids()
 
     def v_kepler(self, r):
         """
@@ -268,15 +226,6 @@ class Qwind:
         dt : float
             Timestep in units of R_g/c.
         """
-        if derive_from_ss:
-            #z_0 = self.radiation.sed_class.disk_scale_height(r_0)
-            temperature = self.radiation.qsosed.disk_nt_temperature4(r_0)**(1./4.)
-            v_z_0 = self.thermal_velocity(temperature) * const.C
-            rho_0 = self.radiation.qsosed.disk_number_density(r_0)
-        if v_z_0 == "thermal":
-            temperature = self.radiation.qsosed.disk_nt_temperature4(r_0)**(1./4.)
-            v_z_0 = self.thermal_velocity(temperature) * const.C
-            #T = temperature
         return self.streamline_solver(
             self.radiation,
             wind=self,
@@ -333,51 +282,21 @@ class Qwind:
             Number of timesteps.
         """
         self.progress_bar = tqdm(total=10000)
-        if show_plots and self.radiation_class != "simple_sed":
-            self.plotter.plot_all_grids()
-            plt.show()
-        for i in range(0, self.iterations):
-            print(f"Iteration {i+1} of {self.iterations}")
-            if (self.radiation_class == "qsosed") and ("old_taus" not in self.modes) and (not self.first_iter) and ("uv_interp" not in self.modes):
-                self.radiation.grid.initialize_all()
-                self.radiation.integrator.update(self.radiation.grid)
+        self.lines = []
+        for i, r in enumerate(self.lines_r_range[:-1]):
+            self.lines.append(self.line(r_0=r,
+                                        line_width = self.lines_widths[i],
+                                        derive_from_ss=derive_from_ss,
+                                        v_z_0=v_z_0,
+                                        rho_0=rho_0,
+                                        z_0=z_0,
+                                        dt = dt,
+                                        **kwargs,
+                                        ))
+        for i, line in enumerate(self.lines):
+            line.iterate(niter=niter)
 
-            self.lines = []
-            for i, r in enumerate(self.lines_r_range[:-1]):
-                self.lines.append(self.line(r_0=r,
-                                            line_width = self.lines_widths[i],
-                                            derive_from_ss=derive_from_ss,
-                                            v_z_0=v_z_0,
-                                            rho_0=rho_0,
-                                            z_0=z_0,
-                                            dt = dt,
-                                            **kwargs,
-                                            ))
-            for i, line in enumerate(self.lines):
-                line.iterate(niter=niter)
-                #except IDAError:
-                #    print("Terminating gracefully...")
-                #    pass
-                if self.radiation_class != "simple_sed" and "uv_interp" not in self.modes and "dont_update_grids" not in self.modes: 
-                    self.radiation.grid.update_all(init=False)
-                    if show_plots:
-                        self.plotter.plot_all_grids()
-                        plt.show()
-            self.mdot_w, self.kinetic_luminosity, self.angle, self.v_terminal = self.compute_wind_properties()
-            if self.radiation_class != "simple_sed": 
-                if "uv_interp" not in self.modes:
-                    self.radiation.initialize_all()
-                self.radiation.grid.update_all()
-                self.radiation.compute_mass_accretion_rate_grid(self.lines)
-                if show_plots:
-                    self.plotter.plot_all_grids()
-                    plt.show()
-                    plt.plot(self.radiation.grid.grid_disk_range, self.radiation.grid.mdot_grid)
-                    plt.show()
-            self.iteration_info.append([self.mdot_w, self.kinetic_luminosity, self.angle, self.v_terminal])
-            if "uv_interp" in self.modes:
-                self.first_iter = False #Atention change!
-        #return self.lines
+        self.mdot_w, self.kinetic_luminosity, self.angle, self.v_terminal = self.compute_wind_properties()
 
     def compute_line_mass_loss(self, line):
         """
@@ -394,7 +313,7 @@ class Qwind:
         """
         Computes wind kinetic luminosity
         """
-        dR = line.line_width #self.lines_r_range[1] - self.lines_r_range[0]
+        dR = line.line_width 
         area = 2 * np.pi * ((line.r_0 + dR/2.)**2. -
                             (line.r_0 - dR/2.)**2) * self.R_g**2.
         mdot_w = line.rho_0 * const.M_P * line.v_T_0 * const.C * area
@@ -436,6 +355,6 @@ class Qwind:
     
 
 if __name__ == '__main__':
-    qwind = Qwind(M=1e8, mdot=0.1, rho_shielding=2e8,  n_cpus=4, nr=4)
+    qwind = Qwind(M=1e8, mdot=0.1, rho_shielding=2e8,  nr=4)
     qwind.start_lines(niter=50000)
     utils.save_results(qwind, "Results")

@@ -384,7 +384,6 @@ class streamline():
             r, z, self.r_0, self.tau_dr, self.tau_dr_shielding, self.wind.rho_shielding, es_only=self.es_only)
         self.xi = self.radiation.ionization_parameter(
             r, z, self.tau_x, self.rho)
-        self.T = self.radiation.compute_temperature(self.rho, self.r, self.xi)
         self.v_th = self.wind.thermal_velocity(self.T)
         self.tau_eff = self.radiation.sobolev_optical_depth(self.tau_dr, self.dv_dr, self.v_th)
         self.fm = self.radiation.force_multiplier(self.tau_eff, self.xi)  #self.radiation.force_multiplier(self.tau_eff, self.xi)
