@@ -27,10 +27,17 @@ conda install -c conda-forge assimulo
 Installing
 ----------
 
-Once Assimulo has been installed through conda, the code can be installed with pip
+Clone the repo
 
 ```
-pip install qwind
+git clone https://github.com/arnauqb/qwind
+```
+
+change directory and install with pip,
+
+```
+cd qwind
+pip install -e .
 ```
 
 Running the tests
