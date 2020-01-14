@@ -59,8 +59,6 @@ License
 =======
 
 The project is licensed under the GPL3 license. See LICENSE.md file for details.
-Please refer to (link to Notebook) for a quick start on how to use the code.
-
 
 
 
