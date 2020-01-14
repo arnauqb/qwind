@@ -40,6 +40,11 @@ cd qwind
 pip install -e .
 ```
 
+Quickstart
+----------
+
+See the notebook `quickstart.ipynb` for an example on how to run the code.
+
 Running the tests
 =================
 
