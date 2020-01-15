@@ -55,6 +55,11 @@ cd test
 pytest
 ```
 
+Citing
+======
+
+Please cite the original paper if you use the code. For now is only available at arXiv: https://arxiv.org/abs/2001.04720 
+
 License
 =======
 
