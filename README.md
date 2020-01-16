@@ -24,6 +24,8 @@ See the requirements.txt file. Also, due to a current error on the Assimulo pack
 conda install -c conda-forge assimulo
 ```
 
+You also need to have installed the GSL library.
+
 Installing
 ----------
 
@@ -38,6 +40,7 @@ change directory and install with pip,
 ```
 cd qwind
 pip install -e .
+make
 ```
 
 Quickstart
