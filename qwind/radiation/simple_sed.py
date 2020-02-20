@@ -210,7 +210,7 @@ class Radiation:
         tau_x_0 += max(100 * (r_0 - self.dr/2. - self.r_x), 0)
         distance = np.sqrt(r ** 2 + z ** 2)
         sec_theta = distance / r
-        delta_r = abs(r - r_0 - self.dr / 2)
+        delta_r = abs(r - (r_0 - self.dr / 2))
         tau_x = sec_theta * (tau_dr_0 * tau_x_0 + tau_dr *
                              self.opacity_x_r(r) * delta_r)
         tau_x = min(tau_x, 50)
