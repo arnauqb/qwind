@@ -7,7 +7,7 @@ from scipy import integrate, interpolate, optimize
 
 import qwind.constants as const
 from qwind.integration import qwind1 as integration 
-from qsosed import sed
+#from qsosed import sed
 
 
 class Radiation:
@@ -18,7 +18,7 @@ class Radiation:
 
     def __init__(self, wind):
         self.wind = wind
-        self.qsosed = sed.SED(M=self.wind.M / const.M_SUN, mdot=self.wind.mdot)
+        #self.qsosed = sed.SED(M=self.wind.M / const.M_SUN, mdot=self.wind.mdot)
         self.xray_fraction = self.wind.f_x 
         self.uv_fraction = 1 - self.wind.f_x
         self.dr = (self.wind.lines_r_max - self.wind.lines_r_min) / (self.wind.nr - 1)

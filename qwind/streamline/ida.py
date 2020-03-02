@@ -256,8 +256,8 @@ class streamline():
         if r < (self.r_0 - 0.01):
             raise BackToDisk
 
-        if (z < np.max(self.z_hist)) and (v_z < 0):
-            raise BackToDisk
+        #if (z < np.max(self.z_hist)) and (v_z < 0):
+        #    raise BackToDisk
         #print(self.solver.y)
         # stalling
         if self.terminate_stalling:
