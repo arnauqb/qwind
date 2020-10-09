@@ -11,10 +11,10 @@ from qwind import utils
 from assimulo.solvers.sundials import IDAError
 
 backend = utils.type_of_script()
-if(backend == 'jupyter'):
+if backend == "jupyter":
     from tqdm import tqdm_notebook as tqdm
 else:
-    #tqdm = tqdm_dump
+    # tqdm = tqdm_dump
     from tqdm import tqdm as tqdm
 
 
@@ -28,29 +28,28 @@ class Qwind:
     A class used to represent the global properties of the wind, i.e, the accretion disc and black hole properties as well as attributes shared among streamlines.
     """
 
-    def __init__(self,
-                 M=1e8,
-                 mdot=0.5,
-                 spin=0.,
-                 eta=0.057,
-                 lines_r_min=200,
-                 lines_r_max=1600,
-                 disk_r_min=6.,
-                 disk_r_max=1600,
-                 f_x=0.15,
-                 f_uv=None,
-                 T=2e6,
-                 mu=1,
-                 modes=[],
-                 rho_shielding=2e8,
-                 intsteps=1,
-                 nr=20,
-                 d_max=3e3,
-                 save_dir=None,
-                 solver="ida",
-                 log_spaced = False,
-                 epsrel=1e-3,
-                 ):
+    def __init__(
+        self,
+        M=1e8,
+        mdot=0.5,
+        spin=0.0,
+        eta=0.057,
+        lines_r_min=200,
+        lines_r_max=1600,
+        disk_r_min=6.0,
+        disk_r_max=1600,
+        f_x=0.15,
+        f_uv=None,
+        T=25e3,
+        mu=1,
+        modes=[],
+        rho_shielding=2e8,
+        nr=20,
+        d_max=3e3,
+        save_dir=None,
+        solver="ida",
+        epsrel=1e-3,
+    ):
         """
         Parameters
         ----------
@@ -80,8 +79,6 @@ class Qwind:
                 - "analytic_fm" : Use analytic approximation of the force multiplier.
         rho_shielding : float
             Initial density of the shielding material.
-        intsteps : int
-            If old_integral mode enabled, this refined the integration grid.
         save_dir : str
             Directory to save results.
         """
@@ -98,13 +95,13 @@ class Qwind:
         self.disk_r_min = disk_r_min
         self.disk_r_max = disk_r_max
         self.eta = eta
-        self.nr = nr + 1 # nr denotes the borders between lines, so...
+        self.nr = nr + 1  # nr denotes the borders between lines, so...
         self.d_max = d_max
         self.rho_shielding = rho_shielding
         if solver == "euler":
             from qwind.streamline.euler import streamline as streamline_solver
         elif solver == "ida":
-            from qwind.streamline.ida import streamline as streamline_solver 
+            from qwind.streamline.ida import streamline as streamline_solver
         else:
             print("solver not found")
             raise Exception
@@ -119,18 +116,14 @@ class Qwind:
         # initialize radiation class
         self.radiation = simple_sed.Radiation(self)
         self.tau_dr_shielding = self.tau_dr(self.rho_shielding)
-        
+
         # compute initial radii of streamlines
-        if log_spaced == True:
-            dr_log = (np.log10(self.lines_r_max) - np.log10(self.lines_r_min)) / (self.nr - 1)
-            lines_r_range_log = np.array([np.log10(self.lines_r_min) + (i-0.5) * dr_log for i in range(1, self.nr+1)])
-            self.lines_r_range = 10**lines_r_range_log
-        else:
-            dr = (self.lines_r_max - self.lines_r_min) / (self.nr - 1)
-            self.lines_r_range = np.array([self.lines_r_min + (i-0.5) * dr for i in range(1, self.nr + 1)])
+        dr = (self.lines_r_max - self.lines_r_min) / (self.nr - 1)
+        self.lines_r_range = np.array(
+            [self.lines_r_min + (i - 0.5) * dr for i in range(1, self.nr + 1)]
+        )
         self.lines_widths = np.diff(self.lines_r_range)
 
-                
         # create directory if it doesnt exist. Warning, this overwrites previous outputs.
         if save_dir is not None:
             self.save_dir = save_dir
@@ -142,7 +135,6 @@ class Qwind:
         self.lines = []  # list of streamline objects
         self.lines_hist = []  # save all iterations info
 
-
     def v_kepler(self, r):
         """
         Keplerian tangential velocity in units of c.
@@ -152,7 +144,7 @@ class Qwind:
         Returns:
             v_phi: tangential velocity in units of c.
         """
-        v_phi = np.sqrt(1./r)
+        v_phi = np.sqrt(1.0 / r)
         return v_phi
 
     def v_esc(self, d):
@@ -165,7 +157,7 @@ class Qwind:
             spherical radial distance.
         """
 
-        return np.sqrt(2. / d)
+        return np.sqrt(2.0 / d)
 
     @property
     def eddington_luminosity(self):
@@ -195,17 +187,18 @@ class Qwind:
         tau_dr = const.SIGMA_T * self.mu * density * self.R_g
         return tau_dr
 
-    def line(self,
-             r_0,
-             derive_from_ss = False,
-             z_0=1.,
-             rho_0=2e8,
-             T=2e6,
-             v_r_0=0.,
-             v_z_0=1e7,
-             dt=4.096 / 10.,
-             **kwargs,
-             ):
+    def line(
+        self,
+        r_0,
+        z_0=1.0,
+        rho_0=2e8,
+        T=None,
+        v_r_0=0.0,
+        v_z_0=1e7,
+        dt=4.096 / 10.0,
+        max_iter=1000,
+        **kwargs,
+    ):
         """
         Initialises a streamline object.
 
@@ -236,39 +229,20 @@ class Qwind:
             v_r_0=v_r_0,
             v_z_0=v_z_0,
             dt=dt,
+            max_iter=max_iter,
             **kwargs,
         )
 
-    def initialize_lines(self,
-                         derive_from_ss=False,
-                         v_z_0=1e7,
-                         niter=5000,
-                         rho_0=2e8,
-                         z_0=1,
-                         dt=4.096/10,
-                         show_plots=True,
-                         **kwargs):
-
-        self.lines = []
-        for i, r in enumerate(self.lines_r_range[:-1]):
-            self.lines.append(self.line(r_0=r,
-                              line_width = self.lines_widths[i],
-                              derive_from_ss=derive_from_ss,
-                              v_z_0=v_z_0,
-                              rho_0=rho_0,
-                              z_0=z_0,
-                              dt = dt,
-                              **kwargs,
-                              ))
-    def start_lines(self,
-                    derive_from_ss=False,
-                    v_z_0=1e7,
-                    niter=5000,
-                    rho_0=2e8,
-                    z_0=1,
-                    dt=4.096/10,
-                    show_plots=True,
-                    **kwargs):
+    def start_lines(
+        self,
+        v_z_0=1e7,
+        rho_0=2e8,
+        z_0=1,
+        dt=4.096 / 10,
+        T = None,
+        max_iter=1000,
+        **kwargs,
+    ):
         """
         Starts and evolves a set of equally spaced streamlines.
 
@@ -281,25 +255,30 @@ class Qwind:
         niter : int 
             Number of timesteps.
         """
-        try:
-            self.progress_bar = tqdm(total=10000)
-        except:
-            print("progress bar support if you install jupyter widgets")
         self.lines = []
         for i, r in enumerate(self.lines_r_range[:-1]):
-            self.lines.append(self.line(r_0=r,
-                                        line_width = self.lines_widths[i],
-                                        derive_from_ss=derive_from_ss,
-                                        v_z_0=v_z_0,
-                                        rho_0=rho_0,
-                                        z_0=z_0,
-                                        dt = dt,
-                                        **kwargs,
-                                        ))
+            self.lines.append(
+                self.line(
+                    r_0=r,
+                    line_width=self.lines_widths[i],
+                    v_z_0=v_z_0,
+                    rho_0=rho_0,
+                    z_0=z_0,
+                    dt=dt,
+                    T=T,
+                    max_iter=max_iter,
+                    **kwargs,
+                )
+            )
         for i, line in enumerate(self.lines):
-            line.iterate(niter=niter)
+            line.iterate()
 
-        self.mdot_w, self.kinetic_luminosity, self.angle, self.v_terminal = self.compute_wind_properties()
+        (
+            self.mdot_w,
+            self.kinetic_luminosity,
+            self.angle,
+            self.v_terminal,
+        ) = self.compute_wind_properties()
 
     def compute_line_mass_loss(self, line):
         """
@@ -307,22 +286,29 @@ class Qwind:
         """
         mdot_w_total = 0
         width = line.line_width
-        area = 2 * np.pi * ((line.r_0 + width/2.)**2. -
-                            (line.r_0 - width/2.)**2) * self.R_g**2.
+        area = (
+            2
+            * np.pi
+            * ((line.r_0 + width / 2.0) ** 2.0 - (line.r_0 - width / 2.0) ** 2)
+            * self.R_g ** 2.0
+        )
         mdot_w = line.rho_0 * const.M_P * line.v_T_0 * const.C * area
         return mdot_w
-    
+
     def compute_line_kinetic_luminosity(self, line):
         """
         Computes wind kinetic luminosity
         """
-        dR = line.line_width 
-        area = 2 * np.pi * ((line.r_0 + dR/2.)**2. -
-                            (line.r_0 - dR/2.)**2) * self.R_g**2.
+        dR = line.line_width
+        area = (
+            2
+            * np.pi
+            * ((line.r_0 + dR / 2.0) ** 2.0 - (line.r_0 - dR / 2.0) ** 2)
+            * self.R_g ** 2.0
+        )
         mdot_w = line.rho_0 * const.M_P * line.v_T_0 * const.C * area
-        kl = 0.5 * mdot_w * (const.C * line.v_T_hist[-1])**2
-        return kl 
-
+        kl = 0.5 * mdot_w * (const.C * line.v_T_hist[-1]) ** 2
+        return kl
 
     def compute_wind_properties(self):
         """
@@ -335,9 +321,9 @@ class Qwind:
         wind_exists = False
         lines_escaped = np.array(self.lines)[escaped_mask == True]
 
-        if(len(lines_escaped) == 0):
+        if len(lines_escaped) == 0:
             print("No wind escapes")
-            return [0,0,0,0]
+            return [0, 0, 0, 0]
 
         mdot_w_total = 0
         kinetic_energy_total = 0
@@ -351,13 +337,6 @@ class Qwind:
 
         fastest_line_idx = np.argmax(terminal_vs)
         v_fastest = terminal_vs[fastest_line_idx]
-        angle_fastest = angles[fastest_line_idx] * 180 / np.pi 
+        angle_fastest = angles[fastest_line_idx] * 180 / np.pi
 
         return [mdot_w_total, kinetic_energy_total, angle_fastest, v_fastest]
-     
-    
-
-if __name__ == '__main__':
-    qwind = Qwind(M=1e8, mdot=0.1, rho_shielding=2e8,  nr=4)
-    qwind.start_lines(niter=50000)
-    utils.save_results(qwind, "Results")

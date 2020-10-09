@@ -20,7 +20,6 @@ wind = wind.Qwind(
     mu=1,
     modes=[],
     rho_shielding=2e8,
-    intsteps=1,
     nr=20,
     save_dir=None,
 )

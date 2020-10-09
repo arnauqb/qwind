@@ -6,7 +6,6 @@ from scipy import LowLevelCallable
 from scipy.integrate import nquad
 from numpy.ctypeslib import ndpointer
 
-#c_array = ndpointer(c_double, flags="C_CONTIGUOUS")
 c_double_p = POINTER(c_double)
 
 class Parameters(Structure):
@@ -23,11 +22,6 @@ class Parameters(Structure):
             ]
 library_path = os.path.dirname(__file__)
 lib = CDLL(os.path.join(library_path, "qwind_library.so"))
-#try:
-#    libdir = os.path.dirname(__file__)
-#    lib = CDLL(os.path.join(libdir, "integration_library.so"))
-#except:
-#    lib = CDLL(os.path.abspath("integration_library.so"))
 
 nt_rel_factors = lib.nt_rel_factors
 nt_rel_factors.restype = c_double
