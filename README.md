@@ -1,3 +1,5 @@
+# Warning: This is an old version of the code no longer supported. Please go [here](https://github.com/arnauqb/Qwind.jl) for the current version.
+
 [![Build Status](https://travis-ci.org/arnauqb/qwind.svg?branch=master)](https://travis-ci.org/arnauqb/qwind)
 [![codecov](https://codecov.io/gh/arnauqb/qwind/branch/master/graph/badge.svg)](https://codecov.io/gh/arnauqb/qwind)
 
